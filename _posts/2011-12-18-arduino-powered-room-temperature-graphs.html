@@ -32,11 +32,12 @@ import time
 import serial
 import sys
  
-while True:
- conn = MySQLdb.connect (host = "localhost",
+conn = MySQLdb.connect (host = "localhost",
  user = "derp",
  passwd = "murp",
  db = "tempdata")
+
+while True:
  timestamp = int(time.time())
  ser = serial.Serial('/dev/ttyUSB0');
  ser.open
