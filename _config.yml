@@ -2,7 +2,7 @@ title:            Ammar's Blog
 description:      My blog, mostly about programming
 disqus_shortname: 
 #Comment out url when working locally to resolve base urls correctly
-url:             http://blog.ammaraskar.com
+url:             //blog.ammaraskar.com
 
 # Owner/author information
 owner:
