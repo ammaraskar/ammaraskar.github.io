@@ -2,26 +2,186 @@
 <feed xmlns="http://www.w3.org/2005/Atom" xml:lang="en">
 <title type="text">Ammar's Blog</title>
 <generator uri="https://github.com/mojombo/jekyll">Jekyll</generator>
-<link rel="self" type="application/atom+xml" href="http://ec2.ammaraskar.com:4000/feed.xml" />
-<link rel="alternate" type="text/html" href="http://ec2.ammaraskar.com:4000" />
-<updated>2013-10-02T11:44:17+00:00</updated>
-<id>http://ec2.ammaraskar.com:4000/</id>
+<link rel="self" type="application/atom+xml" href="/feed.xml" />
+<link rel="alternate" type="text/html" href="" />
+<updated>2015-04-18T04:37:22+00:00</updated>
+<id>/</id>
 <author>
   <name>Ammar Askar</name>
-  <uri>http://ec2.ammaraskar.com:4000/</uri>
+  <uri>/</uri>
   <email>ammar@ammaraskar.com</email>
 </author>
 
 
 <entry>
+  <title type="html"><![CDATA[Minecraft Vulnerability Advisory]]></title>
+  <link>/minecraft-vulnerability-advisory</link>
+  <id>/minecraft-vulnerability-advisory</id>
+  <published>2015-04-16T00:00:00+00:00</published>
+  <updated>2015-04-16T00:00:00+00:00</updated>
+  <author>
+    <name>Ammar Askar</name>
+    <uri></uri>
+    <email>ammar@ammaraskar.com</email>
+  </author>
+  <content type="html">&lt;h3 id=&quot;a-lesson-on-data-structures-networking-protocols-data-sanitization-and-disclosure&quot;&gt;&lt;em&gt;A lesson on data structures, networking protocols, data sanitization and disclosure&lt;/em&gt;&lt;/h3&gt;
+
+&lt;p&gt;Around 2 years ago, I was enthusiastically working on Spigot and Bukkit along with a couple
+of fairly popular plugins. During my poking around within the &lt;a href=&quot;https://github.com/ammaraskar/pyCraft&quot;&gt;networking internals of
+Minecraft&lt;/a&gt;, I came across a fairly substantial 
+problem that allowed anyone to send certain malformed packets and crash a server by 
+running it out of memory.&lt;/p&gt;
+
+&lt;p&gt;Following the defacto standard procedure, I responsibly and privately disclosed the
+problem to Mojang on 10th July, &lt;strong&gt;2013&lt;/strong&gt;. That’s nearly 2 years ago. I asked for updates
+in one month intervals over the course of 3 months and was ignored or given highly
+unsatisfactory responses. I kept my hopes up that the problem would be patched and checked
+the source code on new releases whenever I could.&lt;/p&gt;
+
+&lt;p&gt;The version of the game when the vulnerability was reported was 1.6.2, the game is now on
+version 1.8.3. That’s right, 2 major versions and dozens of minor versions and a critical
+vulnerability that allows you to crash any server, and starve the actual machines of CPU and
+memory was allowed to exist.&lt;/p&gt;
+
+&lt;h3 id=&quot;the-technical-details&quot;&gt;The technical details&lt;/h3&gt;
+
+&lt;p&gt;The minecraft protocol enables the exchange of information about what an inventory slot contains.
+This allows you to, for example, get the items in your hotbar when you log in. Items in minecraft
+also contain a feature that allows them to store arbitary metadata (used for enhancements, books etc).
+This metadata is stored in a format known as &lt;a href=&quot;http://wiki.vg/NBT&quot;&gt;NBT&lt;/a&gt;. The NBT format is essentially
+like JSON but in binary form. This allows it to store complex data structures with nesting and the like.&lt;/p&gt;
+
+&lt;p&gt;For example, the NBT metadata (known as a tag) for a book might look something like this&lt;/p&gt;
+
+&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-javascript&quot; data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;nx&quot;&gt;tag&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;nx&quot;&gt;author&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&amp;quot;ammar2&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;nx&quot;&gt;title&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&amp;quot;Kitteh&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+    &lt;span class=&quot;nx&quot;&gt;pages&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;s2&quot;&gt;&amp;quot;Kitties are cute&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;s2&quot;&gt;&amp;quot;I like kitties&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;The vulnerability stems from the fact that the client is allowed to send the server
+information about certain slots. This, coupled with the NBT format’s nesting allows us to
+&lt;em&gt;craft&lt;/em&gt; a packet that is incredibly complex for the server to deserialize but trivial for
+us to generate.&lt;/p&gt;
+
+&lt;p&gt;In my case, I chose to create lists within lists, down to five levels. This is a json representation
+of what it looks like.&lt;/p&gt;
+
+&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-javascript&quot; data-lang=&quot;javascript&quot;&gt;&lt;span class=&quot;nx&quot;&gt;rekt&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+        &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+            &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                    &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                        &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                        &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                        &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                        &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                        &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                        &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                        &lt;span class=&quot;nx&quot;&gt;list&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;
+                        &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                        &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+                    &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+                &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+                &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+
+&lt;p&gt;The root of the object, &lt;code&gt;rekt&lt;/code&gt;, contains 300 lists. Each list has a list with 10 sublists, and each of
+those sublists has 10 of their own, up until 5 levels of recursion. That’s a total of &lt;code&gt;10^5 * 300 = 30,000,000&lt;/code&gt; lists.
+And this isn’t even the theoretical maximum for this attack. Just the nbt data for this payload is 26.6 megabytes. But luckily
+minecraft implements a way to compress large packets, lucky us! zlib shrinks down our 
+evil data to a mere 39 kilobytes.&lt;/p&gt;
+
+&lt;p&gt;Note: in previous versions of minecraft, there was no protocol wide compression for big packets.
+Previously, NBT was sent compressed with gzip and prefixed with a signed short of its length, which reduced our maximum payload
+size to &lt;code&gt;2^15 - 1&lt;/code&gt;. Now that the length is a varint capable of storing integers up to &lt;code&gt;2^28&lt;/code&gt;, our potential for attack has increased significantly. (for the more technically minded people, we fill the list up with TAG_ENDs, which aren’t accounted for by the accumulator Mojang attempted to implement to fix this) &lt;/p&gt;
+
+&lt;p&gt;When the server will decompress our data, it’ll have 27 megs in a buffer somewhere in memory, but that isn’t the bit
+that’ll kill it. When it attempts to parse it into NBT, it’ll create java representations of the objects meaning
+suddenly, the sever is having to create several million java objects including ArrayLists. This runs the server
+out of memory and causes tremendous cpu load.&lt;/p&gt;
+
+&lt;p&gt;This vulnerability exists on almost all previous and current minecraft versions as of 1.8.3, the packets
+used as attack vectors are the &lt;a href=&quot;http://wiki.vg/Protocol#Player_Block_Placement&quot;&gt;0x08: Block Placement Packet&lt;/a&gt; and
+&lt;a href=&quot;http://wiki.vg/Protocol#Creative_Inventory_Action&quot;&gt;0x10: Creative Inventory Action&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;The fix for this vulnerability isn’t exactly that hard, the client should never really send a data structure
+as complex as NBT of arbitrary size and if it must, some form of recursion and size limits should be implemented.
+These were the fixes that I recommended to Mojang 2 years ago.&lt;/p&gt;
+
+&lt;h3 id=&quot;proof-of-concept&quot;&gt;Proof of concept&lt;/h3&gt;
+
+&lt;p&gt;A proof of concept of this exploit can be seen &lt;a href=&quot;https://github.com/ammaraskar/pyCraft/tree/nbt_exploit&quot;&gt;here on my Github repo.&lt;/a&gt;
+The code to generate the posioned nbt can be seen in &lt;code&gt;start.py&lt;/code&gt;. The code has been tested under python 2.7, once
+you have connected to a server simply enter &lt;code&gt;exploit&lt;/code&gt; in the command line and the packet will be sent to the server.&lt;/p&gt;
+
+&lt;h3 id=&quot;disclosure&quot;&gt;Disclosure&lt;/h3&gt;
+
+&lt;p&gt;I thought a lot before writing this post, on the one hand I don’t want to expose thousands of servers to a major
+vulnerability, yet on the other hand Mojang has failed to act upon it. Mojang is no longer a small indie company
+making a little indie game, their software is used by thousands of servers, hundreds of thousands of people play on
+servers running their software at any given time. They have a responsibility to fix and properly work out problems
+like this. In addition, it should be noted that giving condescending responses to white hats who are responsibly 
+disclosing vulnerabilities and trying to improve a product they enjoy is a sure fire way to get developers dis-interested
+the next time they come across a bug like this.&lt;/p&gt;
+
+&lt;h4 id=&quot;timeline&quot;&gt;Timeline&lt;/h4&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;28th July, 2013: First contact with mojang employee about the issue, vulnerability disclosed and proof of concept
+provided.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;19th August, 2013: Second time asking about fix, response given that its being worked on.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;24th September, 2013: Third contact with employee, told that the problem has been delegated.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;25th October, 2013: Fourth time I attempted to contact employee, ignored. &lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;27th October, 2013: Another attempt to contact, ignored again. (at this point, I patiently waited for a fix)&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;p&gt;In retrospect, yes, I should have given them a final warning sometime recently before this but I just expected to be shot down again&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Update&lt;/em&gt;: With the release of this full disclosure I have actually made contact with mojang and they are working to fix the issue. Apparently the initial fix they tried failed which indicates a lack of proper testing.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Update 2&lt;/em&gt;: The exact problem that caused this bug to go unpatched has been identified. Mojang attempted to implement a fix for this problem, however they did not test their fix against the proof of concept I provided, which still crashed the server perfectly fine. This, in combination with ignoring me when I asked for status updates twice led me to believe that Mojang had attempted no fix. In retrospect, a final warning before this full disclosure more recently was propbably in order. A combination of mis-communication and lack of testing led to this situation today, hopefully it can be a good learning experience.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Update 3&lt;/em&gt;: This problem has been patched as of minecraft version 1.8.4 &lt;/p&gt;
+
+&lt;p&gt;&lt;a href=&quot;https://mojang.com/2015/04/minecraft-1-8-4-security-release/&quot;&gt;https://mojang.com/2015/04/minecraft-1-8-4-security-release/&lt;/a&gt;&lt;/p&gt;
+
+&lt;p&gt;I’m happy to see that multiple other security issues have also been fixed. Once again, I feel better communication would have easily alleviated this problem. Keeping me in the loop and not ignoring me, in addition to proper testing would have easily led to this exploit being fixed long ago.&lt;/p&gt;
+
+&lt;p&gt;&lt;em&gt;Edit&lt;/em&gt;: In regards to the statements that I never filed a report on their bug tracker, I’d just like to point out that nobody pointed me towards the tracker when I reported the issue, I wasn’t asked to make a ticket or told that I could follow the progress of the report on x-ticket.&lt;/p&gt;
+
+
+  &lt;p&gt;&lt;a href=&quot;/minecraft-vulnerability-advisory&quot;&gt;Minecraft Vulnerability Advisory&lt;/a&gt; was originally published by Ammar Askar at &lt;a href=&quot;&quot;&gt;Ammar's Blog&lt;/a&gt; on April 16, 2015.&lt;/p&gt;</content>
+</entry>
+
+
+<entry>
   <title type="html"><![CDATA[Arduino Powered Room Temperature Graphs]]></title>
-  <link>http://ec2.ammaraskar.com:4000/arduino-powered-room-temperature-graphs</link>
-  <id>http://ec2.ammaraskar.com:4000/arduino-powered-room-temperature-graphs</id>
+  <link>/arduino-powered-room-temperature-graphs</link>
+  <id>/arduino-powered-room-temperature-graphs</id>
   <published>2011-12-18T00:00:00+00:00</published>
   <updated>2011-12-18T00:00:00+00:00</updated>
   <author>
     <name>Ammar Askar</name>
-    <uri>http://ec2.ammaraskar.com:4000</uri>
+    <uri></uri>
     <email>ammar@ammaraskar.com</email>
   </author>
   <content type="html">&lt;center&gt; &lt;img src=&quot;/images/arduino-pic.jpg&quot;&gt; &lt;/center&gt;
@@ -30,7 +190,7 @@
 &lt;br/&gt;
 
 
-I was always really interested in making new projects for my arduino, the first of which was an LED music visualizer. The problem here was that arduinos aren't really popular in Pakistan, I had to get my current duemillenove shipped in from China thus getting an internet shield would be very difficult. One fine day I started thinking and said to myself, hey I nave a dedicated home server why not just hook up the arduino to that and write a program on the server to read that data through serial and use it somehow. Initially it was designed just to be able to read the current temperature, graphing was added in later.
+I was always really interested in making new projects for my arduino, the first of which was an LED music visualizer. The problem here was that arduinos aren&#39;t really popular in Pakistan, I had to get my current duemillenove shipped in from China thus getting an internet shield would be very difficult. One fine day I started thinking and said to myself, hey I nave a dedicated home server why not just hook up the arduino to that and write a program on the server to read that data through serial and use it somehow. Initially it was designed just to be able to read the current temperature, graphing was added in later.
 
 Here is how it works:
 
@@ -38,16 +198,17 @@ The first part of the process is an arduino which has a  &lt;em&gt;&lt;a href=&
 
 The next part is a python script running in an infinite loop, it reads the values from the serial port and then proceeds to put them in a MySQL table, this occurs once every 2 minutes.
 
-&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;python&quot;&gt;&lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;MySQLdb&lt;/span&gt;
+&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-python&quot; data-lang=&quot;python&quot;&gt;&lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;MySQLdb&lt;/span&gt;
 &lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;time&lt;/span&gt;
 &lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;serial&lt;/span&gt;
 &lt;span class=&quot;kn&quot;&gt;import&lt;/span&gt; &lt;span class=&quot;nn&quot;&gt;sys&lt;/span&gt;
  
-&lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
- &lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;MySQLdb&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;connect&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;host&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;quot;localhost&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;conn&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;MySQLdb&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;connect&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;host&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;quot;localhost&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;user&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;quot;derp&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;passwd&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;quot;murp&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;db&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;s&quot;&gt;&amp;quot;tempdata&amp;quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
+
+&lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;bp&quot;&gt;True&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;:&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;timestamp&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;nb&quot;&gt;int&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;time&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;time&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;())&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;ser&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;serial&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Serial&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&amp;#39;/dev/ttyUSB0&amp;#39;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
  &lt;span class=&quot;n&quot;&gt;ser&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;open&lt;/span&gt;
@@ -59,12 +220,11 @@ The next part is a python script running in an infinite loop, it reads the value
  &lt;span class=&quot;n&quot;&gt;ser&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;close&lt;/span&gt;
  &lt;span class=&quot;k&quot;&gt;print&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;timestamp&lt;/span&gt;
  &lt;span class=&quot;k&quot;&gt;print&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;line&lt;/span&gt;
- &lt;span class=&quot;n&quot;&gt;time&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sleep&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;120&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+ &lt;span class=&quot;n&quot;&gt;time&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;.&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;sleep&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;120&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 
 The final stage is a php script using jpgraph to plot the data from the mysql table.
 
-&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;php&quot;&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?php&lt;/span&gt;
+&lt;div class=&quot;highlight&quot;&gt;&lt;pre&gt;&lt;code class=&quot;language-php&quot; data-lang=&quot;php&quot;&gt;&lt;span class=&quot;cp&quot;&gt;&amp;lt;?php&lt;/span&gt;
 &lt;span class=&quot;k&quot;&gt;require_once&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&amp;#39;jpgraph/src/jpgraph.php&amp;#39;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
 &lt;span class=&quot;k&quot;&gt;require_once&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s1&quot;&gt;&amp;#39;jpgraph/src/jpgraph_line.php&amp;#39;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
  
@@ -127,10 +287,9 @@ The final stage is a php script using jpgraph to plot the data from the mysql ta
 &lt;span class=&quot;c1&quot;&gt;// Output line&lt;/span&gt;
 &lt;span class=&quot;nv&quot;&gt;$graph&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;na&quot;&gt;Stroke&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;();&lt;/span&gt;
  
-&lt;span class=&quot;cp&quot;&gt;?&amp;gt;&lt;/span&gt;&lt;span class=&quot;x&quot;&gt;&lt;/span&gt;
-&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
+&lt;span class=&quot;cp&quot;&gt;?&amp;gt;&lt;/span&gt;&lt;span class=&quot;x&quot;&gt;&lt;/span&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;
 
-  &lt;p&gt;&lt;a href=&quot;http://ec2.ammaraskar.com:4000/arduino-powered-room-temperature-graphs&quot;&gt;Arduino Powered Room Temperature Graphs&lt;/a&gt; was originally published by Ammar Askar at &lt;a href=&quot;http://ec2.ammaraskar.com:4000&quot;&gt;Ammar's Blog&lt;/a&gt; on December 18, 2011.&lt;/p&gt;</content>
+  &lt;p&gt;&lt;a href=&quot;/arduino-powered-room-temperature-graphs&quot;&gt;Arduino Powered Room Temperature Graphs&lt;/a&gt; was originally published by Ammar Askar at &lt;a href=&quot;&quot;&gt;Ammar's Blog&lt;/a&gt; on December 18, 2011.&lt;/p&gt;</content>
 </entry>
 
 </feed>
