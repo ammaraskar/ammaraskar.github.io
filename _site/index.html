@@ -128,6 +128,188 @@
 <article class="hentry">
   <header>
     
+      <div class="entry-image-index">
+        <a href="http://localhost:4000/iclicker-reverse-engineering/" title="Reverse Engineering the iClicker Base Station"><img src="http://localhost:4000/images/iclicker/header.jpg" alt="Reverse Engineering the iClicker Base Station"></a>
+      </div><!-- /.entry-image -->
+    
+    <div class="entry-meta">
+      <span class="entry-date date published updated"><time datetime="2018-10-06T00:00:00-04:00"><a href="http://localhost:4000/iclicker-reverse-engineering/">October 06, 2018</a></time></span><span class="author vcard"><span class="fn"><a href="http://localhost:4000/about/" title="About Ammar Askar">Ammar Askar</a></span></span>
+      
+      <span class="entry-reading-time">
+        <i class="fa fa-clock-o"></i>
+        
+Reading time ~4 minutes
+      </span><!-- /.entry-reading-time -->
+      
+    </div><!-- /.entry-meta -->
+    
+      <h1 class="entry-title"><a href="http://localhost:4000/iclicker-reverse-engineering/" rel="bookmark" title="Reverse Engineering the iClicker Base Station" itemprop="url">Reverse Engineering the iClicker Base Station</a></h1>
+    
+  </header>
+  <div class="entry-content">
+    <h2 id="what-are-iclickers">What are iClickers?</h2>
+
+<p>iClickers are used in a lot of colleges in order to conduct quizzes and take 
+attendance. The whole ecosystem operates as follows:</p>
+
+<ol>
+  <li>
+    <p>Each student buys an <a href="https://www.amazon.com/iClicker2-student-remote-iClicker/dp/1498603041/ref=sr_1_1?ie=UTF8&amp;qid=1538854585&amp;sr=8-1&amp;keywords=iclicker">iClicker device</a>.
+They’ve got some buttons on them to respond to multiple choice questions.
+<img src="/images/iclicker/remote.jpg" alt="" class="img-responsive" /></p>
+  </li>
+  <li>
+    <p>They enter the unique ID on the back of the device into their school
+database.</p>
+  </li>
+  <li>
+    <p>Each class is equipped with a base station that connects to the
+instructor’s computer via USB.
+<img src="/images/iclicker/header.jpg" alt="" class="img-responsive" />
+With iClicker’s software, they can
+conduct quizzes and export the answers for automatic grading.</p>
+  </li>
+</ol>
+
+<h2 id="state-of-the-art-of-iclicker-reverse-engineering">State of the art of iClicker reverse engineering</h2>
+
+<p>A significant amount of work has been as far as figuring out how the student
+owned remotes work. The seminal work in this field is contained in this
+<a href="https://courses.ece.ubc.ca/cpen442/term_project/reports/2010/iclicker.pdf">fantastic paper</a> 
+conducted by some students at the University of British Columbia where they 
+dumped out the firmware of the remote. Some key contributions they made were
+figuring out the exact radio transceiver used in the device as well as the
+obfuscation scheme used in the transmission of the IDs.</p>
+
+<p>Following up to this, some students at Cornell started off a project called
+<a href="https://github.com/wizard97/iSkipper">iSkipper</a> where they attempted to create
+an open source alternative to the iClicker. By using logic analyzers and
+dumping out the raw communications using a software defined radio, they were
+able to piece together the protocol that the remotes use to send their answers
+over the air. They wrote their own implementation of an iClicker that can be
+run on an Arduino with just a 900MHz radio transceiver.</p>
+
+<p>While the iSkipper project has managed to figure out most of the iClicker
+protocol, one missing piece is the communication from the base station back
+to the remotes. Upon pressing a button, the base station sends back an
+acknowledgement packet to indicate that the answer has been accepted. In 
+addition, the base station can also send a welcome message to the remotes to
+indicate what class is currently in progress.</p>
+
+<p>In order to figure out this last missing piece of the iClicker puzzle, I set
+out to reverse engineer the receiver.</p>
+
+<h2 id="acquiring-the-firmware">Acquiring the firmware</h2>
+
+<p>The first part of reverse engineering the base station would be to obtain
+the firmware that runs on it. Since I didn’t own a base station and didn’t
+want to buy one (you can get them for anywhere between $50-$100 on eBay), I
+had to figure out an alternative approach to acquiring the firmware.</p>
+
+<p>Searching for iClicker base station firmware led me to the “iClicker Base 
+Firmware Utility” on the iClicker <a href="https://www.iclicker.com/downloads">downloads page</a>.
+This software claimed to be able to update the firmware on a base station so
+it seemed like a natural target. I initially guessed that they would package the
+updated firmware with the executable but searching around in the distributed
+files I couldn’t locate any firmware files. Next up I ended up starting the
+executable.</p>
+
+<p><img src="/images/iclicker/update.png" alt="" class="img-responsive" /></p>
+
+<p>“Check for Update”, interesting. This was a massive hint that the updates
+were most likely downloaded over the internet. Thus, I cracked open the
+executable in IDA and searched away for interesting URLs.</p>
+
+<p><img src="/images/iclicker/strings.png" alt="" class="img-responsive" /></p>
+
+<p>Aha! <a href="http://update.iclickergo.com/ic7files/iclicker/QA/">http://update.iclickergo.com/ic7files/iclicker/QA/</a>.</p>
+
+<p>Opening up this URL in a browser, I found that most of the files were updates
+the firmware utility itself, but there were two very interesting files:</p>
+
+<ul>
+  <li>update_v0602.txt</li>
+  <li>U_BASEU_V0058.txt</li>
+</ul>
+
+<p>Here is a chunk of <code class="highlighter-rouge">update_v0602.txt</code>:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>:100000000C942B010C9474120C9499120C94000013
+:100010000C9400000C9400000C9400000C94000060
+:100020000C9400000C942B130C9400000C94501BA7
+:100030000C9400000C946D1B0C9400000C940000B8
+:100040000C9400000C9400000C9400000C94000030
+:100050000C94000000002110422063308440A55021
+</code></pre></div></div>
+
+<p>For those unfamiliar, this an <a href="https://en.wikipedia.org/wiki/Intel_HEX">Intel HEX file</a>,
+Getting into a binary format was as simple as:</p>
+
+<p><code class="highlighter-rouge">objcopy -I ihex update_v0602.txt -O binary firmware.bin</code></p>
+
+<p>and with that, I had the firmware on my hands without having to install a JTAG
+interface or an AVR programmer into a base station.</p>
+
+<h2 id="reverse-engineering-the-firmware">Reverse engineering the firmware</h2>
+
+<p>Alright so next up we gotta disassemble the firmware. I strongly suspected that
+there was some Atmel chip inside the base station, just like the remote. Atmel
+makes some very popular programmable microcontrollers, a lot of embedded
+systems, IoT devices and the Arduino platform use Atmel chips.</p>
+
+<p>Luckily IDA supports disassembling AVR, the architecture used by these
+microcontrollers. So I cracked the firmware open in IDA and went to hunt down
+the code that generates the acknowledgement packets.</p>
+
+<p>There was a lot of code and I wasn’t exactly familiar with AVR so in order to 
+get my bearings, I set out to find a known piece of the protocol: th scrambling 
+and descrambling routine for the iClicker remote ID. The iSkipper project had 
+already figured out <a href="https://github.com/wizard97/iSkipper/blob/c9a81d46491679ef925d359c865b17efc4248750/emulator/iSkipper/iClickerEmulator.cpp#L73-L79">the formula</a>
+to do this:</p>
+
+<div class="language-c++ highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">iClickerEmulator</span><span class="o">::</span><span class="n">decodeId</span><span class="p">(</span><span class="kt">uint8_t</span> <span class="o">*</span><span class="n">id</span><span class="p">,</span> <span class="kt">uint8_t</span> <span class="o">*</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
+    <span class="n">ret</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">=</span> <span class="p">(</span><span class="n">id</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&gt;&gt;</span> <span class="mi">3</span><span class="p">)</span> <span class="o">|</span> <span class="p">((</span><span class="n">id</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&amp;</span> <span class="mh">0x1</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="mi">5</span><span class="p">)</span> <span class="o">|</span> <span class="p">((</span><span class="n">id</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&amp;</span> <span class="mh">0x1</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="mi">6</span><span class="p">)</span> <span class="o">|</span> <span class="p">((</span><span class="n">id</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&amp;</span> <span class="mh">0x4</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="mi">5</span><span class="p">);</span>
+    <span class="n">ret</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">id</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span> <span class="o">&amp;</span> <span class="mh">0x1</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="mi">7</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">id</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span> <span class="o">&gt;&gt;</span> <span class="mi">1</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">id</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&gt;&gt;</span> <span class="mi">7</span><span class="p">);</span>
+    <span class="n">ret</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">=</span> <span class="p">((</span><span class="n">id</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span> <span class="o">&amp;</span> <span class="mh">0x7c</span><span class="p">)</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="p">)</span> <span class="o">|</span> <span class="p">(</span><span class="n">id</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">&gt;&gt;</span> <span class="mi">5</span><span class="p">);</span>
+    <span class="n">ret</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span> <span class="o">=</span> <span class="n">ret</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span><span class="o">^</span><span class="n">ret</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="o">^</span><span class="n">ret</span><span class="p">[</span><span class="mi">2</span><span class="p">];</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>So a good place to start would be finding functions that do a lot of bit shifting.
+Searching for “lsr” (Logical Shift Right), I found a peculiar function:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">loc_375a</span><span class="o">:</span>
+  <span class="n">lsr</span>     <span class="n">r30</span>
+  <span class="n">lsr</span>     <span class="n">r30</span>
+  <span class="n">lsr</span>     <span class="n">r30</span>
+  <span class="k">ret</span>
+</code></pre></div></div>
+
+<p>In AVR, the <code class="highlighter-rouge">lsr</code> opcode shifts its argument register right by 1 bit, this looked
+an awful lot like the initial part of the decoding algorithm so I followed to
+the callers of this <code class="highlighter-rouge">right_shift_3</code> function.</p>
+
+<p>There were some cool tricks that the compiler used, for example in order to
+shift right by 7, it didn’t emit 7 <code class="highlighter-rouge">lsr</code> instructions. Instead, the sequence of
+instructions was</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">swap</span>    <span class="n">r30</span>
+<span class="n">andi</span>    <span class="n">r30</span><span class="p">,</span> <span class="mh">0xF</span>
+<span class="n">lsr</span>     <span class="n">r30</span>
+<span class="n">lsr</span>     <span class="n">r30</span>
+<span class="n">lsr</span>     <span class="n">r30</span>
+</code></pre></div></div>
+
+<p>The <code class="highlighter-rouge">swap</code> instruction swaps the two nibblets of the byte, so the higher order
+4 bites get swapped with the lower order 4 bits. Performing an and with <code class="highlighter-rouge">0xF = 0b1111</code>
+after this essentially does the same thing as shifting right by 4.</p>
+
+  </div><!-- /.entry-content -->
+</article><!-- /.hentry -->
+
+<article class="hentry">
+  <header>
+    
     <div class="entry-meta">
       <span class="entry-date date published updated"><time datetime="2019-04-06T00:00:00-04:00"><a href="http://localhost:4000/swampctf-future/">April 06, 2019</a></time></span><span class="author vcard"><span class="fn"><a href="http://localhost:4000/about/" title="About Ammar Askar">Ammar Askar</a></span></span>
       
