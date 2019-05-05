@@ -133,12 +133,12 @@
       </div><!-- /.entry-image -->
     
     <div class="entry-meta">
-      <span class="entry-date date published updated"><time datetime="2018-10-06T00:00:00-04:00"><a href="http://localhost:4000/iclicker-reverse-engineering/">October 06, 2018</a></time></span><span class="author vcard"><span class="fn"><a href="http://localhost:4000/about/" title="About Ammar Askar">Ammar Askar</a></span></span>
+      <span class="entry-date date published updated"><time datetime="2019-05-04T00:00:00-04:00"><a href="http://localhost:4000/iclicker-reverse-engineering/">May 04, 2019</a></time></span><span class="author vcard"><span class="fn"><a href="http://localhost:4000/about/" title="About Ammar Askar">Ammar Askar</a></span></span>
       
       <span class="entry-reading-time">
         <i class="fa fa-clock-o"></i>
         
-Reading time ~4 minutes
+Reading time ~11 minutes
       </span><!-- /.entry-reading-time -->
       
     </div><!-- /.entry-meta -->
@@ -261,10 +261,17 @@ systems, IoT devices and the Arduino platform use Atmel chips.</p>
 microcontrollers. So I cracked the firmware open in IDA and went to hunt down
 the code that generates the acknowledgement packets.</p>
 
+<p>Take the next section with a heavy grain of salt, this was my first time
+reverse engineering embedded software and it was very much new and uncharted
+territory for me. If I made any glaring mistakes, please feel free to reach out
+and I’ll try to amend them :)</p>
+
+<h3 id="id-decoding">ID Decoding</h3>
+
 <p>There was a lot of code and I wasn’t exactly familiar with AVR so in order to 
-get my bearings, I set out to find a known piece of the protocol: th scrambling 
-and descrambling routine for the iClicker remote ID. The iSkipper project had 
-already figured out <a href="https://github.com/wizard97/iSkipper/blob/c9a81d46491679ef925d359c865b17efc4248750/emulator/iSkipper/iClickerEmulator.cpp#L73-L79">the formula</a>
+get my bearings, I set out to find a known piece of the protocol: the scrambling 
+and de-scrambling routine for the iClicker remote ID. The iSkipper project had 
+already figured out <a href="https://github.com/wizard97/iSkipper/blob/c9a81d46491679ef925d359c865b17efc4248750/emulator/iSkipper/iClickerEmulator.cpp#L73-L79">the algorithm</a>
 to do this:</p>
 
 <div class="language-c++ highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="n">iClickerEmulator</span><span class="o">::</span><span class="n">decodeId</span><span class="p">(</span><span class="kt">uint8_t</span> <span class="o">*</span><span class="n">id</span><span class="p">,</span> <span class="kt">uint8_t</span> <span class="o">*</span><span class="n">ret</span><span class="p">)</span> <span class="p">{</span>
@@ -289,9 +296,9 @@ Searching for “lsr” (Logical Shift Right), I found a peculiar function:</p>
 an awful lot like the initial part of the decoding algorithm so I followed to
 the callers of this <code class="highlighter-rouge">right_shift_3</code> function.</p>
 
-<p>There were some cool tricks that the compiler used, for example in order to
-shift right by 7, it didn’t emit 7 <code class="highlighter-rouge">lsr</code> instructions. Instead, the sequence of
-instructions was</p>
+<p>There were some cool tricks that the compiler used in this area, for example in 
+order to shift right by 7, it didn’t emit 7 <code class="highlighter-rouge">lsr</code> instructions. Instead, the 
+sequence of instructions was</p>
 
 <div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">swap</span>    <span class="n">r30</span>
 <span class="n">andi</span>    <span class="n">r30</span><span class="p">,</span> <span class="mh">0xF</span>
@@ -300,9 +307,260 @@ instructions was</p>
 <span class="n">lsr</span>     <span class="n">r30</span>
 </code></pre></div></div>
 
-<p>The <code class="highlighter-rouge">swap</code> instruction swaps the two nibblets of the byte, so the higher order
+<p>The <code class="highlighter-rouge">swap</code> instruction swaps the two nibbles of the byte, so the higher order
 4 bites get swapped with the lower order 4 bits. Performing an and with <code class="highlighter-rouge">0xF = 0b1111</code>
 after this essentially does the same thing as shifting right by 4.</p>
+
+<p>While this approach led me to the function that decodes the ID, the rest of the
+calling logic was not particularly easy to follow. I needed to find more
+landmarks in the code to figure out what was going on.</p>
+
+<h3 id="radio-spi-interface">Radio SPI Interface</h3>
+
+<p>As mentioned in the introduction, previous reverse-engineers had already
+figured out what radio chip was used in the clicker, namely the <a href="https://www.semtech.com/products/wireless-rf/fsk-transceivers/XE1203F">Semtech XE1203F</a>.</p>
+
+<p>Consulting the datasheets for the IC, we can see that it uses a 3-write SPI 
+(Serial Peripheral Interface) based protocol in order to configure the radio
+chip. The next logical step was to look at an SPI tutorial for AVR microcontrollers,
+I found a great one <a href="http://avrbeginners.net/architecture/spi/spi.html">here</a> with
+the following code sample:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">SPI_Send</span><span class="o">:</span>
+<span class="n">ldi</span> <span class="n">r16</span><span class="p">,</span><span class="mh">0xAA</span>
+<span class="k">out</span> <span class="n">SPDR</span><span class="p">,</span><span class="n">r16</span>         <span class="c">; Initiate data transfer. </span>
+
+<span class="n">Wait</span><span class="o">:</span>
+<span class="n">sbis</span> <span class="n">SPSR</span><span class="p">,</span><span class="n">SPIF</span>       <span class="c">; Wait for transmission to complete.</span>
+<span class="n">rjmp</span> <span class="n">Wait</span>
+<span class="k">in</span> <span class="n">SPDR</span><span class="p">,</span><span class="n">r16</span>	         <span class="c">; The received data is placed in r16.</span>
+</code></pre></div></div>
+
+<p>Perfect, so we have to look up usages of the <code class="highlighter-rouge">SPDR</code> register within the
+firmware. There is only one place that used this register, so I labelled the
+function as <code class="highlighter-rouge">read_write_from_SPI</code>. It reads one argument stored at <code class="highlighter-rouge">(Y+1)</code> and 
+then writes it out the SPI port.</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">ROM</span><span class="o">:</span><span class="mi">1393</span> <span class="n">read_write_from_SPI</span><span class="o">:</span>                    <span class="c">; CODE XREF: read_write_two_bytes_SPI</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1393</span>                 <span class="n">st</span>      <span class="o">-</span><span class="n">Y</span><span class="p">,</span> <span class="n">r16</span>         <span class="c">; Spill register r16</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1394</span>                 <span class="k">cli</span>                     <span class="c">; Disable interrupts</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1395</span>                 <span class="n">ldd</span>     <span class="n">r30</span><span class="p">,</span> <span class="n">Y</span><span class="o">+</span><span class="mi">1</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1396</span>                 <span class="k">out</span>     <span class="n">SPDR</span><span class="p">,</span> <span class="n">r30</span>       <span class="c">; SPI Data Register</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1397</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1397</span> <span class="n">loc_1397</span><span class="o">:</span>                               <span class="c">; CODE XREF: read_write_from_SPI+7</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1397</span>                 <span class="k">in</span>      <span class="n">r30</span><span class="p">,</span> <span class="n">SPSR</span>       <span class="c">; SPI Status Register</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1398</span>                 <span class="n">andi</span>    <span class="n">r30</span><span class="p">,</span> <span class="mh">0x80</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">1399</span>                 <span class="n">cpi</span>     <span class="n">r30</span><span class="p">,</span> <span class="mh">0x80</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">139</span><span class="n">A</span>                 <span class="n">brne</span>    <span class="n">loc_1397</span>
+</code></pre></div></div>
+
+<p>Here is one of the usages of the SPI writing function:</p>
+
+<div class="language-nasm highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="n">ROM</span><span class="o">:</span><span class="mi">082</span><span class="n">A</span>                 <span class="n">ldi</span>     <span class="n">r30</span><span class="p">,</span> <span class="mh">0xF</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">082</span><span class="n">B</span>                 <span class="n">ldi</span>     <span class="n">r31</span><span class="p">,</span> <span class="mh">0x8A</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">082</span><span class="n">C</span>                 <span class="n">st</span>      <span class="o">-</span><span class="n">Y</span><span class="p">,</span> <span class="n">r31</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">082</span><span class="n">D</span>                 <span class="n">st</span>      <span class="o">-</span><span class="n">Y</span><span class="p">,</span> <span class="n">r30</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">082</span><span class="n">E</span>                 <span class="k">call</span>    <span class="n">read_write_two_bytes_SPI</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">0830</span>                 <span class="n">ldi</span>     <span class="n">r30</span><span class="p">,</span> <span class="mh">0xA0</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">0831</span>                 <span class="n">ldi</span>     <span class="n">r31</span><span class="p">,</span> <span class="mh">0x8B</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">0832</span>                 <span class="n">st</span>      <span class="o">-</span><span class="n">Y</span><span class="p">,</span> <span class="n">r31</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">0833</span>                 <span class="n">st</span>      <span class="o">-</span><span class="n">Y</span><span class="p">,</span> <span class="n">r30</span>
+<span class="n">ROM</span><span class="o">:</span><span class="mi">0834</span>                 <span class="k">call</span>    <span class="n">read_write_two_bytes_SPI</span>
+</code></pre></div></div>
+
+<p>Now if we consult with the XE1203F’s documentation, it mentions the following:</p>
+
+<blockquote>
+  <p>The timing diagram of a write sequence is illustrated in Figure 12 below. The 
+sequence is initiated when a Start condition is detected, defined by the SI 
+signal being set to “0” during one period of SCK. The next bit is a read/write
+(R/W) bit which should be “0” to indicate a write operation. The next 5 bits 
+contain the address of the configuration/status registers A[4:0] to be 
+accessed, MSB first (see 5.2). Then, the next 8 bits contain the data to
+be written into the register. The sequence ends with 2 stop bits set to “1”.</p>
+</blockquote>
+
+<p><img src="/images/iclicker/spi.png" alt="" class="img-responsive" /></p>
+
+<p>Okay cool, now if we take a closer look at the bytes being written out on the
+SPI interface as binary, we see the following:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0x8A          0xF
+
+1000 1010   0000 1111
+</code></pre></div></div>
+
+<p>Compare this against the timing diagram from the datasheet above, looks fairly
+similar! If we plot it out and label the bits, we see the following:</p>
+
+<p><img src="/images/iclicker/spi_ours.png" alt="" class="img-responsive" /></p>
+
+<p>Great, so this is code that is writing a value to a configuration register in
+the radio chip. Notably it’s writing the value <code class="highlighter-rouge">0xF</code> to the register at
+address <code class="highlighter-rouge">0x01010</code>. I confirmed this theory by decoding a few more SPI writes.</p>
+
+<table>
+  <thead>
+    <tr>
+      <th style="text-align: center">Register</th>
+      <th style="text-align: center">Value</th>
+      <th style="text-align: center">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td style="text-align: center">0x01010</td>
+      <td style="text-align: center">0x0F</td>
+      <td style="text-align: center">Frequency Adjustment MSB</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">0x01011</td>
+      <td style="text-align: center">0xA0</td>
+      <td style="text-align: center">Frequency Adjustment LSB</td>
+    </tr>
+    <tr>
+      <td style="text-align: center">0x00010</td>
+      <td style="text-align: center">0x1F</td>
+      <td style="text-align: center">Frequency Band 902–928 MHz</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Following the formula in the datasheet, we can see that the frequency will be
+be the base frequency plus 500 times the frequency adjustment registers 
+interpreted as a 16 bit two’s compliment number.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>Frequency Base = 915 Mhz
+Frequency Adjustment = 0x0FA0 = 4000
+
+Final Frequency = (915 Mhz) + (4000 * 500 Hz)
+                = 917 Mhz
+</code></pre></div></div>
+
+<p>and if we check this against the first paper linked above, we can confirm that
+they experimentally figured out the default <code class="highlighter-rouge">AA</code> channel operates at <code class="highlighter-rouge">917.0 MHz</code>.</p>
+
+<p>Great, this discovery lets us figure out exactly what parameters the radio
+module is using and helped find the portion of the code responsible for changing
+frequencies.</p>
+
+<h3 id="radio-data-io">Radio Data IO</h3>
+
+<p>So the SPI protocol is how the radio module is configured, but looking at the
+data sheet we can see that there is a separate <code class="highlighter-rouge">DATAIN</code> and <code class="highlighter-rouge">DATA</code> port used to
+read and write actual radio packets. My first intuition was that the firmware might
+be making use of the AVR USART (Universal Synchronous/Asynchronous Receiver/Transmitter)
+feature to exchange data with the radio chip.</p>
+
+<p>However, after looking at the interrupt handlers for <code class="highlighter-rouge">USART_RXC</code> and <code class="highlighter-rouge">USART_TXC</code>
+which correspond to when a byte is sent or received by the USART module, it
+seemed clear that this is actually how the base station communicates with the
+instructor’s computer and NOT where radio messages were read/sent.</p>
+
+<p>Within AVR, IO is primarily done using the <code class="highlighter-rouge">in</code> and <code class="highlighter-rouge">out</code> instructions. The only
+interesting traces I could find for the <code class="highlighter-rouge">in</code> instruction was in the <code class="highlighter-rouge">INT1</code> 
+interrupt handler which corresponds to a configurable external interrupt handler.
+The following is psuedo-C like code that corresponds to the handler:</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">int8_t</span> <span class="n">radio_bytes_read</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+<span class="kt">int8_t</span> <span class="n">radio_bits_to_read</span> <span class="o">=</span> <span class="mi">8</span><span class="p">;</span>
+<span class="kt">int8_t</span> <span class="n">radio_bytes_to_read</span> <span class="o">=</span> <span class="n">n</span><span class="p">;</span>
+
+<span class="k">extern</span> <span class="kt">int8_t</span><span class="o">*</span> <span class="n">radio_bytes</span><span class="p">;</span>
+
+<span class="kt">void</span> <span class="nf">INT1</span><span class="p">()</span> <span class="p">{</span>
+    <span class="k">while</span> <span class="p">(</span><span class="n">radio_bytes_to_read</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">while</span> <span class="p">(</span><span class="n">radio_bits_to_read</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span> <span class="p">{</span>
+            <span class="kt">int8_t</span> <span class="n">current_byte</span> <span class="o">=</span> <span class="n">radio_bytes</span><span class="p">[</span><span class="n">radio_bytes_read</span><span class="p">];</span>
+
+            <span class="k">if</span> <span class="p">(</span><span class="n">PIND_5</span> <span class="n">is</span> <span class="n">high</span><span class="p">)</span> <span class="p">{</span>
+                <span class="n">current_byte</span> <span class="o">|=</span> <span class="mi">1</span><span class="p">;</span>
+            <span class="p">}</span>
+            <span class="n">current_byte</span> <span class="o">=</span> <span class="n">current_byte</span> <span class="o">&lt;&lt;</span> <span class="mi">1</span><span class="p">;</span>
+
+            <span class="n">radio_bytes</span><span class="p">[</span><span class="n">radio_bytes_read</span><span class="p">]</span> <span class="o">=</span> <span class="n">current_byte</span><span class="p">;</span>
+            <span class="n">radio_bits_to_read</span><span class="o">--</span><span class="p">;</span>
+        <span class="p">}</span>
+        <span class="n">radio_bytes_to_read</span><span class="o">--</span><span class="p">;</span>
+        <span class="n">radio_bits_to_read</span> <span class="o">=</span> <span class="mi">8</span><span class="p">;</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<p>And bingo, now that we know where <code class="highlighter-rouge">radio_bytes</code> array is in memory, we can
+look at cross references to it to find the code that processes packets sent
+over the radio.</p>
+
+<h3 id="dynamic-analysis">Dynamic analysis</h3>
+
+<p>After a large portion of just statically analyzing the disassembled code, I
+decided to use the fantastic <a href="https://github.com/buserror/simavr">avrsim</a>
+project that allows you to run avr binaries and even attach <code class="highlighter-rouge">gdb</code> to it.</p>
+
+<p>I took the example code in <code class="highlighter-rouge">examples/board_simduino/simduino.c</code> and
+customized it to my needs. The first most obvious change to make is to change
+the MMCU to <code class="highlighter-rouge">atmega16</code>.</p>
+
+<p>Next up was setting the appropriate bit and raising the external interrupts to
+emulate the radio module receiving bytes.</p>
+
+<div class="language-c highlighter-rouge"><div class="highlight"><pre class="highlight"><code><span class="kt">void</span> <span class="nf">send_byte</span><span class="p">(</span><span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">b</span><span class="p">,</span> <span class="n">avr_irq_t</span><span class="o">*</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">avr_extint_t</span><span class="o">*</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr_t</span><span class="o">*</span> <span class="n">avr</span><span class="p">)</span> <span class="p">{</span>
+    <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">i</span> <span class="o">=</span> <span class="mi">7</span><span class="p">;</span> <span class="n">i</span> <span class="o">&gt;=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">i</span><span class="o">--</span><span class="p">)</span> <span class="p">{</span>
+        <span class="k">for</span> <span class="p">(</span><span class="kt">int</span> <span class="n">j</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span> <span class="n">j</span> <span class="o">&lt;</span> <span class="mi">200000</span><span class="p">;</span> <span class="n">j</span><span class="o">++</span><span class="p">)</span> <span class="p">{</span>
+            <span class="n">avr_run</span><span class="p">(</span><span class="n">avr</span><span class="p">);</span>
+        <span class="p">}</span>
+
+        <span class="kt">int</span> <span class="n">bit</span> <span class="o">=</span> <span class="p">(</span><span class="n">b</span> <span class="o">&gt;&gt;</span> <span class="n">i</span><span class="p">)</span> <span class="o">&amp;</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="n">printf</span><span class="p">(</span><span class="s">"Writing bit %d</span><span class="se">\n</span><span class="s">"</span><span class="p">,</span> <span class="n">bit</span><span class="p">);</span>
+        <span class="n">avr_raise_irq</span><span class="p">(</span><span class="n">radio_in</span><span class="p">,</span> <span class="n">bit</span><span class="p">);</span>
+        <span class="n">avr_raise_interrupt</span><span class="p">(</span><span class="n">avr</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">extint</span><span class="o">-&gt;</span><span class="n">eint</span><span class="p">[</span><span class="mi">1</span><span class="p">].</span><span class="n">vector</span><span class="p">);</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+
+<span class="kt">int</span> <span class="nf">main</span><span class="p">(</span><span class="kt">int</span> <span class="n">argc</span><span class="p">,</span> <span class="kt">char</span><span class="o">**</span> <span class="n">argv</span><span class="p">)</span> <span class="p">{</span>
+    <span class="p">...</span>
+    <span class="kt">int</span> <span class="n">interrupted</span> <span class="o">=</span> <span class="mi">0</span><span class="p">;</span>
+
+    <span class="k">while</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span> <span class="p">{</span>
+        <span class="kt">int</span> <span class="n">state</span> <span class="o">=</span> <span class="n">avr_run</span><span class="p">(</span><span class="n">avr</span><span class="p">);</span>
+        <span class="k">if</span> <span class="p">(</span> <span class="n">state</span> <span class="o">==</span> <span class="n">cpu_Done</span> <span class="o">||</span> <span class="n">state</span> <span class="o">==</span> <span class="n">cpu_Crashed</span><span class="p">)</span> <span class="p">{</span>
+            <span class="k">break</span><span class="p">;</span>
+        <span class="p">}</span>
+
+        <span class="c1">// divide by 2 to get "word" addresses like IDA uses</span>
+        <span class="kt">unsigned</span> <span class="kt">int</span> <span class="n">curr_pc</span> <span class="o">=</span> <span class="n">avr</span><span class="o">-&gt;</span><span class="n">pc</span> <span class="o">/</span> <span class="mi">2</span><span class="p">;</span>
+        <span class="k">if</span> <span class="p">(</span><span class="n">curr_pc</span> <span class="o">==</span> <span class="mh">0x18E</span> <span class="o">&amp;&amp;</span> <span class="o">!</span><span class="n">interrupted</span><span class="p">)</span> <span class="p">{</span>
+            <span class="c1">// Perform an INT0 interrupt</span>
+            <span class="n">avr_raise_interrupt</span><span class="p">(</span><span class="n">avr</span><span class="p">,</span> <span class="o">&amp;</span><span class="n">extint</span><span class="o">-&gt;</span><span class="n">eint</span><span class="p">[</span><span class="mi">0</span><span class="p">].</span><span class="n">vector</span><span class="p">);</span>
+            <span class="n">printf</span><span class="p">(</span><span class="s">"Raising AVR INT0 interrupt</span><span class="se">\n</span><span class="s">"</span><span class="p">);</span>
+
+            <span class="c1">// Raw ID = 0xA2 0x46 0x53 0xB7</span>
+            <span class="c1">// My encoded ID = 0x14 0x8C 0x29 0x70</span>
+            <span class="n">send_byte</span><span class="p">(</span><span class="mh">0x14</span><span class="p">,</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr</span><span class="p">);</span>
+            <span class="n">send_byte</span><span class="p">(</span><span class="mh">0x8C</span><span class="p">,</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr</span><span class="p">);</span>
+            <span class="n">send_byte</span><span class="p">(</span><span class="mh">0x29</span><span class="p">,</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr</span><span class="p">);</span>
+            <span class="c1">// Sending an answer of 'B' (0x05)</span>
+            <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">last_id</span> <span class="o">=</span> <span class="mh">0x70</span><span class="p">;</span>
+            <span class="n">last_id</span> <span class="o">&amp;=</span> <span class="mh">0xF0</span><span class="p">;</span>
+            <span class="n">last_id</span> <span class="o">|=</span> <span class="mh">0x05</span><span class="p">;</span>
+            <span class="n">send_byte</span><span class="p">(</span><span class="n">last_id</span><span class="p">,</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr</span><span class="p">);</span>
+
+            <span class="c1">// compute the checksum</span>
+            <span class="kt">unsigned</span> <span class="kt">char</span> <span class="n">checksum</span> <span class="o">=</span> <span class="mh">0x14</span> <span class="o">+</span> <span class="mh">0x8C</span> <span class="o">+</span> <span class="mh">0x29</span> <span class="o">+</span> <span class="n">last_id</span><span class="p">;</span>
+            <span class="n">send_byte</span><span class="p">(</span><span class="n">checksum</span><span class="p">,</span> <span class="n">radio_in</span><span class="p">,</span> <span class="n">extint</span><span class="p">,</span> <span class="n">avr</span><span class="p">);</span>
+
+            <span class="n">interrupted</span> <span class="o">=</span> <span class="mi">1</span><span class="p">;</span>
+        <span class="p">}</span>
+    <span class="p">}</span>
+<span class="p">}</span>
+</code></pre></div></div>
+
+<h2 id="protocol-findings">Protocol Findings</h2>
+
+<p>Hopefully the last section gives you some insight on what the reverse 
+engineering process was like, not too harp on it too much, let’s move on to
+the actual findings in terms of the radio protocol:</p>
 
   </div><!-- /.entry-content -->
 </article><!-- /.hentry -->

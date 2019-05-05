@@ -1,4 +1,417 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.4">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-04-06T22:32:38-04:00</updated><id>http://localhost:4000/</id><title type="html">Ammar’s Blog</title><subtitle>My blog, mostly about programming</subtitle><entry><title type="html">SwampCTF 2019 Future Fun (Reverse) Writeup</title><link href="http://localhost:4000/swampctf-future/" rel="alternate" type="text/html" title="SwampCTF 2019 Future Fun (Reverse) Writeup" /><published>2019-04-06T00:00:00-04:00</published><updated>2019-04-06T00:00:00-04:00</updated><id>http://localhost:4000/swampctf-future</id><content type="html" xml:base="http://localhost:4000/swampctf-future/">&lt;h1 id=&quot;problem-description&quot;&gt;Problem Description&lt;/h1&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.4">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-05-05T01:35:24-04:00</updated><id>http://localhost:4000/</id><title type="html">Ammar’s Blog</title><subtitle>My blog, mostly about programming</subtitle><entry><title type="html">Reverse Engineering the iClicker Base Station</title><link href="http://localhost:4000/iclicker-reverse-engineering/" rel="alternate" type="text/html" title="Reverse Engineering the iClicker Base Station" /><published>2019-05-04T00:00:00-04:00</published><updated>2019-05-04T00:00:00-04:00</updated><id>http://localhost:4000/iclicker-reverse-engineering</id><content type="html" xml:base="http://localhost:4000/iclicker-reverse-engineering/">&lt;h2 id=&quot;what-are-iclickers&quot;&gt;What are iClickers?&lt;/h2&gt;
+
+&lt;p&gt;iClickers are used in a lot of colleges in order to conduct quizzes and take 
+attendance. The whole ecosystem operates as follows:&lt;/p&gt;
+
+&lt;ol&gt;
+  &lt;li&gt;
+    &lt;p&gt;Each student buys an &lt;a href=&quot;https://www.amazon.com/iClicker2-student-remote-iClicker/dp/1498603041/ref=sr_1_1?ie=UTF8&amp;amp;qid=1538854585&amp;amp;sr=8-1&amp;amp;keywords=iclicker&quot;&gt;iClicker device&lt;/a&gt;.
+They’ve got some buttons on them to respond to multiple choice questions.
+&lt;img src=&quot;/images/iclicker/remote.jpg&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;They enter the unique ID on the back of the device into their school
+database.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Each class is equipped with a base station that connects to the
+instructor’s computer via USB.
+&lt;img src=&quot;/images/iclicker/header.jpg&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;
+With iClicker’s software, they can
+conduct quizzes and export the answers for automatic grading.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ol&gt;
+
+&lt;h2 id=&quot;state-of-the-art-of-iclicker-reverse-engineering&quot;&gt;State of the art of iClicker reverse engineering&lt;/h2&gt;
+
+&lt;p&gt;A significant amount of work has been as far as figuring out how the student
+owned remotes work. The seminal work in this field is contained in this
+&lt;a href=&quot;https://courses.ece.ubc.ca/cpen442/term_project/reports/2010/iclicker.pdf&quot;&gt;fantastic paper&lt;/a&gt; 
+conducted by some students at the University of British Columbia where they 
+dumped out the firmware of the remote. Some key contributions they made were
+figuring out the exact radio transceiver used in the device as well as the
+obfuscation scheme used in the transmission of the IDs.&lt;/p&gt;
+
+&lt;p&gt;Following up to this, some students at Cornell started off a project called
+&lt;a href=&quot;https://github.com/wizard97/iSkipper&quot;&gt;iSkipper&lt;/a&gt; where they attempted to create
+an open source alternative to the iClicker. By using logic analyzers and
+dumping out the raw communications using a software defined radio, they were
+able to piece together the protocol that the remotes use to send their answers
+over the air. They wrote their own implementation of an iClicker that can be
+run on an Arduino with just a 900MHz radio transceiver.&lt;/p&gt;
+
+&lt;p&gt;While the iSkipper project has managed to figure out most of the iClicker
+protocol, one missing piece is the communication from the base station back
+to the remotes. Upon pressing a button, the base station sends back an
+acknowledgement packet to indicate that the answer has been accepted. In 
+addition, the base station can also send a welcome message to the remotes to
+indicate what class is currently in progress.&lt;/p&gt;
+
+&lt;p&gt;In order to figure out this last missing piece of the iClicker puzzle, I set
+out to reverse engineer the receiver.&lt;/p&gt;
+
+&lt;h2 id=&quot;acquiring-the-firmware&quot;&gt;Acquiring the firmware&lt;/h2&gt;
+
+&lt;p&gt;The first part of reverse engineering the base station would be to obtain
+the firmware that runs on it. Since I didn’t own a base station and didn’t
+want to buy one (you can get them for anywhere between $50-$100 on eBay), I
+had to figure out an alternative approach to acquiring the firmware.&lt;/p&gt;
+
+&lt;p&gt;Searching for iClicker base station firmware led me to the “iClicker Base 
+Firmware Utility” on the iClicker &lt;a href=&quot;https://www.iclicker.com/downloads&quot;&gt;downloads page&lt;/a&gt;.
+This software claimed to be able to update the firmware on a base station so
+it seemed like a natural target. I initially guessed that they would package the
+updated firmware with the executable but searching around in the distributed
+files I couldn’t locate any firmware files. Next up I ended up starting the
+executable.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/iclicker/update.png&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;“Check for Update”, interesting. This was a massive hint that the updates
+were most likely downloaded over the internet. Thus, I cracked open the
+executable in IDA and searched away for interesting URLs.&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/iclicker/strings.png&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Aha! &lt;a href=&quot;http://update.iclickergo.com/ic7files/iclicker/QA/&quot;&gt;http://update.iclickergo.com/ic7files/iclicker/QA/&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Opening up this URL in a browser, I found that most of the files were updates
+the firmware utility itself, but there were two very interesting files:&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;update_v0602.txt&lt;/li&gt;
+  &lt;li&gt;U_BASEU_V0058.txt&lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;p&gt;Here is a chunk of &lt;code class=&quot;highlighter-rouge&quot;&gt;update_v0602.txt&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;:100000000C942B010C9474120C9499120C94000013
+:100010000C9400000C9400000C9400000C94000060
+:100020000C9400000C942B130C9400000C94501BA7
+:100030000C9400000C946D1B0C9400000C940000B8
+:100040000C9400000C9400000C9400000C94000030
+:100050000C94000000002110422063308440A55021
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;For those unfamiliar, this an &lt;a href=&quot;https://en.wikipedia.org/wiki/Intel_HEX&quot;&gt;Intel HEX file&lt;/a&gt;,
+Getting into a binary format was as simple as:&lt;/p&gt;
+
+&lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;objcopy -I ihex update_v0602.txt -O binary firmware.bin&lt;/code&gt;&lt;/p&gt;
+
+&lt;p&gt;and with that, I had the firmware on my hands without having to install a JTAG
+interface or an AVR programmer into a base station.&lt;/p&gt;
+
+&lt;h2 id=&quot;reverse-engineering-the-firmware&quot;&gt;Reverse engineering the firmware&lt;/h2&gt;
+
+&lt;p&gt;Alright so next up we gotta disassemble the firmware. I strongly suspected that
+there was some Atmel chip inside the base station, just like the remote. Atmel
+makes some very popular programmable microcontrollers, a lot of embedded
+systems, IoT devices and the Arduino platform use Atmel chips.&lt;/p&gt;
+
+&lt;p&gt;Luckily IDA supports disassembling AVR, the architecture used by these
+microcontrollers. So I cracked the firmware open in IDA and went to hunt down
+the code that generates the acknowledgement packets.&lt;/p&gt;
+
+&lt;p&gt;Take the next section with a heavy grain of salt, this was my first time
+reverse engineering embedded software and it was very much new and uncharted
+territory for me. If I made any glaring mistakes, please feel free to reach out
+and I’ll try to amend them :)&lt;/p&gt;
+
+&lt;h3 id=&quot;id-decoding&quot;&gt;ID Decoding&lt;/h3&gt;
+
+&lt;p&gt;There was a lot of code and I wasn’t exactly familiar with AVR so in order to 
+get my bearings, I set out to find a known piece of the protocol: the scrambling 
+and de-scrambling routine for the iClicker remote ID. The iSkipper project had 
+already figured out &lt;a href=&quot;https://github.com/wizard97/iSkipper/blob/c9a81d46491679ef925d359c865b17efc4248750/emulator/iSkipper/iClickerEmulator.cpp#L73-L79&quot;&gt;the algorithm&lt;/a&gt;
+to do this:&lt;/p&gt;
+
+&lt;div class=&quot;language-c++ highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;iClickerEmulator&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;::&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;decodeId&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;uint8_t&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;uint8_t&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;*&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;5&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;6&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x4&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;5&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;7&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;7&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;((&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x7c&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;5&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;3&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;^&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;^&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;ret&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;So a good place to start would be finding functions that do a lot of bit shifting.
+Searching for “lsr” (Logical Shift Right), I found a peculiar function:&lt;/p&gt;
+
+&lt;div class=&quot;language-nasm highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;loc_375a&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+  &lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+  &lt;span class=&quot;k&quot;&gt;ret&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;In AVR, the &lt;code class=&quot;highlighter-rouge&quot;&gt;lsr&lt;/code&gt; opcode shifts its argument register right by 1 bit, this looked
+an awful lot like the initial part of the decoding algorithm so I followed to
+the callers of this &lt;code class=&quot;highlighter-rouge&quot;&gt;right_shift_3&lt;/code&gt; function.&lt;/p&gt;
+
+&lt;p&gt;There were some cool tricks that the compiler used in this area, for example in 
+order to shift right by 7, it didn’t emit 7 &lt;code class=&quot;highlighter-rouge&quot;&gt;lsr&lt;/code&gt; instructions. Instead, the 
+sequence of instructions was&lt;/p&gt;
+
+&lt;div class=&quot;language-nasm highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;swap&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;andi&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0xF&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;lsr&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;The &lt;code class=&quot;highlighter-rouge&quot;&gt;swap&lt;/code&gt; instruction swaps the two nibbles of the byte, so the higher order
+4 bites get swapped with the lower order 4 bits. Performing an and with &lt;code class=&quot;highlighter-rouge&quot;&gt;0xF = 0b1111&lt;/code&gt;
+after this essentially does the same thing as shifting right by 4.&lt;/p&gt;
+
+&lt;p&gt;While this approach led me to the function that decodes the ID, the rest of the
+calling logic was not particularly easy to follow. I needed to find more
+landmarks in the code to figure out what was going on.&lt;/p&gt;
+
+&lt;h3 id=&quot;radio-spi-interface&quot;&gt;Radio SPI Interface&lt;/h3&gt;
+
+&lt;p&gt;As mentioned in the introduction, previous reverse-engineers had already
+figured out what radio chip was used in the clicker, namely the &lt;a href=&quot;https://www.semtech.com/products/wireless-rf/fsk-transceivers/XE1203F&quot;&gt;Semtech XE1203F&lt;/a&gt;.&lt;/p&gt;
+
+&lt;p&gt;Consulting the datasheets for the IC, we can see that it uses a 3-write SPI 
+(Serial Peripheral Interface) based protocol in order to configure the radio
+chip. The next logical step was to look at an SPI tutorial for AVR microcontrollers,
+I found a great one &lt;a href=&quot;http://avrbeginners.net/architecture/spi/spi.html&quot;&gt;here&lt;/a&gt; with
+the following code sample:&lt;/p&gt;
+
+&lt;div class=&quot;language-nasm highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;SPI_Send&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ldi&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r16&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0xAA&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;out&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SPDR&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;r16&lt;/span&gt;         &lt;span class=&quot;c&quot;&gt;; Initiate data transfer. &lt;/span&gt;
+
+&lt;span class=&quot;n&quot;&gt;Wait&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;sbis&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SPSR&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;SPIF&lt;/span&gt;       &lt;span class=&quot;c&quot;&gt;; Wait for transmission to complete.&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;rjmp&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Wait&lt;/span&gt;
+&lt;span class=&quot;k&quot;&gt;in&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SPDR&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;r16&lt;/span&gt;	         &lt;span class=&quot;c&quot;&gt;; The received data is placed in r16.&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Perfect, so we have to look up usages of the &lt;code class=&quot;highlighter-rouge&quot;&gt;SPDR&lt;/code&gt; register within the
+firmware. There is only one place that used this register, so I labelled the
+function as &lt;code class=&quot;highlighter-rouge&quot;&gt;read_write_from_SPI&lt;/code&gt;. It reads one argument stored at &lt;code class=&quot;highlighter-rouge&quot;&gt;(Y+1)&lt;/code&gt; and 
+then writes it out the SPI port.&lt;/p&gt;
+
+&lt;div class=&quot;language-nasm highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1393&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;read_write_from_SPI&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;                    &lt;span class=&quot;c&quot;&gt;; CODE XREF: read_write_two_bytes_SPI&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1393&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;st&lt;/span&gt;      &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r16&lt;/span&gt;         &lt;span class=&quot;c&quot;&gt;; Spill register r16&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1394&lt;/span&gt;                 &lt;span class=&quot;k&quot;&gt;cli&lt;/span&gt;                     &lt;span class=&quot;c&quot;&gt;; Disable interrupts&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1395&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;ldd&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;+&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1396&lt;/span&gt;                 &lt;span class=&quot;k&quot;&gt;out&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;SPDR&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;       &lt;span class=&quot;c&quot;&gt;; SPI Data Register&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1397&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1397&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;loc_1397&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;                               &lt;span class=&quot;c&quot;&gt;; CODE XREF: read_write_from_SPI+7&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1397&lt;/span&gt;                 &lt;span class=&quot;k&quot;&gt;in&lt;/span&gt;      &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;SPSR&lt;/span&gt;       &lt;span class=&quot;c&quot;&gt;; SPI Status Register&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1398&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;andi&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x80&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1399&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;cpi&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x80&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;139&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;A&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;brne&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;loc_1397&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Here is one of the usages of the SPI writing function:&lt;/p&gt;
+
+&lt;div class=&quot;language-nasm highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;082&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;A&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;ldi&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0xF&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;082&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;B&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;ldi&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r31&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x8A&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;082&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;C&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;st&lt;/span&gt;      &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r31&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;082&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;D&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;st&lt;/span&gt;      &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;082&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;E&lt;/span&gt;                 &lt;span class=&quot;k&quot;&gt;call&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;read_write_two_bytes_SPI&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0830&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;ldi&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0xA0&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0831&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;ldi&lt;/span&gt;     &lt;span class=&quot;n&quot;&gt;r31&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x8B&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0832&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;st&lt;/span&gt;      &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r31&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0833&lt;/span&gt;                 &lt;span class=&quot;n&quot;&gt;st&lt;/span&gt;      &lt;span class=&quot;o&quot;&gt;-&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;Y&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;r30&lt;/span&gt;
+&lt;span class=&quot;n&quot;&gt;ROM&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;:&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0834&lt;/span&gt;                 &lt;span class=&quot;k&quot;&gt;call&lt;/span&gt;    &lt;span class=&quot;n&quot;&gt;read_write_two_bytes_SPI&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Now if we consult with the XE1203F’s documentation, it mentions the following:&lt;/p&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;The timing diagram of a write sequence is illustrated in Figure 12 below. The 
+sequence is initiated when a Start condition is detected, defined by the SI 
+signal being set to “0” during one period of SCK. The next bit is a read/write
+(R/W) bit which should be “0” to indicate a write operation. The next 5 bits 
+contain the address of the configuration/status registers A[4:0] to be 
+accessed, MSB first (see 5.2). Then, the next 8 bits contain the data to
+be written into the register. The sequence ends with 2 stop bits set to “1”.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/iclicker/spi.png&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Okay cool, now if we take a closer look at the bytes being written out on the
+SPI interface as binary, we see the following:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0x8A          0xF
+
+1000 1010   0000 1111
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Compare this against the timing diagram from the datasheet above, looks fairly
+similar! If we plot it out and label the bits, we see the following:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/iclicker/spi_ours.png&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;Great, so this is code that is writing a value to a configuration register in
+the radio chip. Notably it’s writing the value &lt;code class=&quot;highlighter-rouge&quot;&gt;0xF&lt;/code&gt; to the register at
+address &lt;code class=&quot;highlighter-rouge&quot;&gt;0x01010&lt;/code&gt;. I confirmed this theory by decoding a few more SPI writes.&lt;/p&gt;
+
+&lt;table&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;Register&lt;/th&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;Value&lt;/th&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0x01010&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0x0F&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Frequency Adjustment MSB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0x01011&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0xA0&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Frequency Adjustment LSB&lt;/td&gt;
+    &lt;/tr&gt;
+    &lt;tr&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0x00010&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;0x1F&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Frequency Band 902–928 MHz&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Following the formula in the datasheet, we can see that the frequency will be
+be the base frequency plus 500 times the frequency adjustment registers 
+interpreted as a 16 bit two’s compliment number.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;Frequency Base = 915 Mhz
+Frequency Adjustment = 0x0FA0 = 4000
+
+Final Frequency = (915 Mhz) + (4000 * 500 Hz)
+                = 917 Mhz
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;and if we check this against the first paper linked above, we can confirm that
+they experimentally figured out the default &lt;code class=&quot;highlighter-rouge&quot;&gt;AA&lt;/code&gt; channel operates at &lt;code class=&quot;highlighter-rouge&quot;&gt;917.0 MHz&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Great, this discovery lets us figure out exactly what parameters the radio
+module is using and helped find the portion of the code responsible for changing
+frequencies.&lt;/p&gt;
+
+&lt;h3 id=&quot;radio-data-io&quot;&gt;Radio Data IO&lt;/h3&gt;
+
+&lt;p&gt;So the SPI protocol is how the radio module is configured, but looking at the
+data sheet we can see that there is a separate &lt;code class=&quot;highlighter-rouge&quot;&gt;DATAIN&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;DATA&lt;/code&gt; port used to
+read and write actual radio packets. My first intuition was that the firmware might
+be making use of the AVR USART (Universal Synchronous/Asynchronous Receiver/Transmitter)
+feature to exchange data with the radio chip.&lt;/p&gt;
+
+&lt;p&gt;However, after looking at the interrupt handlers for &lt;code class=&quot;highlighter-rouge&quot;&gt;USART_RXC&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;USART_TXC&lt;/code&gt;
+which correspond to when a byte is sent or received by the USART module, it
+seemed clear that this is actually how the base station communicates with the
+instructor’s computer and NOT where radio messages were read/sent.&lt;/p&gt;
+
+&lt;p&gt;Within AVR, IO is primarily done using the &lt;code class=&quot;highlighter-rouge&quot;&gt;in&lt;/code&gt; and &lt;code class=&quot;highlighter-rouge&quot;&gt;out&lt;/code&gt; instructions. The only
+interesting traces I could find for the &lt;code class=&quot;highlighter-rouge&quot;&gt;in&lt;/code&gt; instruction was in the &lt;code class=&quot;highlighter-rouge&quot;&gt;INT1&lt;/code&gt; 
+interrupt handler which corresponds to a configurable external interrupt handler.
+The following is psuedo-C like code that corresponds to the handler:&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;int8_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_bytes_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;int8_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_bits_to_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;8&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+&lt;span class=&quot;kt&quot;&gt;int8_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_bytes_to_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;n&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;k&quot;&gt;extern&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int8_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;INT1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;()&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;radio_bytes_to_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;radio_bits_to_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;int8_t&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;current_byte&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;radio_bytes_read&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;];&lt;/span&gt;
+
+            &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;PIND_5&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;is&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;high&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+                &lt;span class=&quot;n&quot;&gt;current_byte&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;current_byte&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;current_byte&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+            &lt;span class=&quot;n&quot;&gt;radio_bytes&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;radio_bytes_read&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;]&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;current_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;radio_bits_to_read&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;radio_bytes_to_read&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;radio_bits_to_read&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;8&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And bingo, now that we know where &lt;code class=&quot;highlighter-rouge&quot;&gt;radio_bytes&lt;/code&gt; array is in memory, we can
+look at cross references to it to find the code that processes packets sent
+over the radio.&lt;/p&gt;
+
+&lt;h3 id=&quot;dynamic-analysis&quot;&gt;Dynamic analysis&lt;/h3&gt;
+
+&lt;p&gt;After a large portion of just statically analyzing the disassembled code, I
+decided to use the fantastic &lt;a href=&quot;https://github.com/buserror/simavr&quot;&gt;avrsim&lt;/a&gt;
+project that allows you to run avr binaries and even attach &lt;code class=&quot;highlighter-rouge&quot;&gt;gdb&lt;/code&gt; to it.&lt;/p&gt;
+
+&lt;p&gt;I took the example code in &lt;code class=&quot;highlighter-rouge&quot;&gt;examples/board_simduino/simduino.c&lt;/code&gt; and
+customized it to my needs. The first most obvious change to make is to change
+the MMCU to &lt;code class=&quot;highlighter-rouge&quot;&gt;atmega16&lt;/code&gt;.&lt;/p&gt;
+
+&lt;p&gt;Next up was setting the appropriate bit and raising the external interrupts to
+emulate the radio module receiving bytes.&lt;/p&gt;
+
+&lt;div class=&quot;language-c highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;&lt;span class=&quot;kt&quot;&gt;void&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;unsigned&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;b&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr_irq_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr_extint_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr_t&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;*&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;7&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;--&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;for&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;j&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;j&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;lt;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;200000&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;j&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;++&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;avr_run&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+        &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bit&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;b&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;gt;&amp;gt;&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;i&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Writing bit %d&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;avr_raise_irq&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;bit&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;n&quot;&gt;avr_raise_interrupt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;eint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;vector&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;nf&quot;&gt;main&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;argc&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;**&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;argv&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;...&lt;/span&gt;
+    &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;interrupted&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+
+    &lt;span class=&quot;k&quot;&gt;while&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+        &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;state&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr_run&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;state&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;cpu_Done&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;||&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;state&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;cpu_Crashed&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;k&quot;&gt;break&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+
+        &lt;span class=&quot;c1&quot;&gt;// divide by 2 to get &quot;word&quot; addresses like IDA uses&lt;/span&gt;
+        &lt;span class=&quot;kt&quot;&gt;unsigned&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;int&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;curr_pc&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;pc&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;/&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;2&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;k&quot;&gt;if&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;curr_pc&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;==&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x18E&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&amp;amp;&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;!&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;interrupted&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;)&lt;/span&gt; &lt;span class=&quot;p&quot;&gt;{&lt;/span&gt;
+            &lt;span class=&quot;c1&quot;&gt;// Perform an INT0 interrupt&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;avr_raise_interrupt&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;o&quot;&gt;-&amp;gt;&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;eint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;[&lt;/span&gt;&lt;span class=&quot;mi&quot;&gt;0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;].&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;vector&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;printf&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;Raising AVR INT0 interrupt&lt;/span&gt;&lt;span class=&quot;se&quot;&gt;\n&lt;/span&gt;&lt;span class=&quot;s&quot;&gt;&quot;&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+            &lt;span class=&quot;c1&quot;&gt;// Raw ID = 0xA2 0x46 0x53 0xB7&lt;/span&gt;
+            &lt;span class=&quot;c1&quot;&gt;// My encoded ID = 0x14 0x8C 0x29 0x70&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x14&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x8C&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;mh&quot;&gt;0x29&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+            &lt;span class=&quot;c1&quot;&gt;// Sending an answer of 'B' (0x05)&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;unsigned&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;last_id&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x70&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;last_id&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;&amp;amp;=&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0xF0&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;last_id&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;|=&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x05&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;last_id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+            &lt;span class=&quot;c1&quot;&gt;// compute the checksum&lt;/span&gt;
+            &lt;span class=&quot;kt&quot;&gt;unsigned&lt;/span&gt; &lt;span class=&quot;kt&quot;&gt;char&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;checksum&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x14&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x8C&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;mh&quot;&gt;0x29&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;+&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;last_id&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+            &lt;span class=&quot;n&quot;&gt;send_byte&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;(&lt;/span&gt;&lt;span class=&quot;n&quot;&gt;checksum&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;radio_in&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;extint&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;,&lt;/span&gt; &lt;span class=&quot;n&quot;&gt;avr&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;);&lt;/span&gt;
+
+            &lt;span class=&quot;n&quot;&gt;interrupted&lt;/span&gt; &lt;span class=&quot;o&quot;&gt;=&lt;/span&gt; &lt;span class=&quot;mi&quot;&gt;1&lt;/span&gt;&lt;span class=&quot;p&quot;&gt;;&lt;/span&gt;
+        &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+    &lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;span class=&quot;p&quot;&gt;}&lt;/span&gt;
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h2 id=&quot;protocol-findings&quot;&gt;Protocol Findings&lt;/h2&gt;
+
+&lt;p&gt;Hopefully the last section gives you some insight on what the reverse 
+engineering process was like, not too harp on it too much, let’s move on to
+the actual findings in terms of the radio protocol:&lt;/p&gt;</content><author><name></name></author><category term="iclicker" /><category term="reverse engineering" /><category term="ida" /><category term="avr" /><category term="x86" /><summary type="html">What are iClickers?</summary><media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="http://localhost:4000/%7B%22feature%22=%3E%22iclicker/header.jpg%22,%20%22credit%22=%3E%22iclicker.com%22%7D" /></entry><entry><title type="html">SwampCTF 2019 Future Fun (Reverse) Writeup</title><link href="http://localhost:4000/swampctf-future/" rel="alternate" type="text/html" title="SwampCTF 2019 Future Fun (Reverse) Writeup" /><published>2019-04-06T00:00:00-04:00</published><updated>2019-04-06T00:00:00-04:00</updated><id>http://localhost:4000/swampctf-future</id><content type="html" xml:base="http://localhost:4000/swampctf-future/">&lt;h1 id=&quot;problem-description&quot;&gt;Problem Description&lt;/h1&gt;
 
 &lt;blockquote&gt;
   &lt;p&gt;Deep on the web, I discovered a secret key validation. It appeared to be from 
