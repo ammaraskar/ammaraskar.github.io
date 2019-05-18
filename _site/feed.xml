@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.4">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-05-05T01:35:24-04:00</updated><id>http://localhost:4000/</id><title type="html">Ammar’s Blog</title><subtitle>My blog, mostly about programming</subtitle><entry><title type="html">Reverse Engineering the iClicker Base Station</title><link href="http://localhost:4000/iclicker-reverse-engineering/" rel="alternate" type="text/html" title="Reverse Engineering the iClicker Base Station" /><published>2019-05-04T00:00:00-04:00</published><updated>2019-05-04T00:00:00-04:00</updated><id>http://localhost:4000/iclicker-reverse-engineering</id><content type="html" xml:base="http://localhost:4000/iclicker-reverse-engineering/">&lt;h2 id=&quot;what-are-iclickers&quot;&gt;What are iClickers?&lt;/h2&gt;
+<?xml version="1.0" encoding="utf-8"?><feed xmlns="http://www.w3.org/2005/Atom" ><generator uri="https://jekyllrb.com/" version="3.8.4">Jekyll</generator><link href="http://localhost:4000/feed.xml" rel="self" type="application/atom+xml" /><link href="http://localhost:4000/" rel="alternate" type="text/html" /><updated>2019-05-17T23:54:06-04:00</updated><id>http://localhost:4000/</id><title type="html">Ammar’s Blog</title><subtitle>My blog, mostly about programming</subtitle><entry><title type="html">Reverse Engineering the iClicker Base Station</title><link href="http://localhost:4000/iclicker-reverse-engineering/" rel="alternate" type="text/html" title="Reverse Engineering the iClicker Base Station" /><published>2019-05-04T00:00:00-04:00</published><updated>2019-05-04T00:00:00-04:00</updated><id>http://localhost:4000/iclicker-reverse-engineering</id><content type="html" xml:base="http://localhost:4000/iclicker-reverse-engineering/">&lt;h2 id=&quot;what-are-iclickers&quot;&gt;What are iClickers?&lt;/h2&gt;
 
 &lt;p&gt;iClickers are used in a lot of colleges in order to conduct quizzes and take 
 attendance. The whole ecosystem operates as follows:&lt;/p&gt;
@@ -250,7 +250,7 @@ similar! If we plot it out and label the bits, we see the following:&lt;/p&gt;
 the radio chip. Notably it’s writing the value &lt;code class=&quot;highlighter-rouge&quot;&gt;0xF&lt;/code&gt; to the register at
 address &lt;code class=&quot;highlighter-rouge&quot;&gt;0x01010&lt;/code&gt;. I confirmed this theory by decoding a few more SPI writes.&lt;/p&gt;
 
-&lt;table&gt;
+&lt;table rules=&quot;groups&quot;&gt;
   &lt;thead&gt;
     &lt;tr&gt;
       &lt;th style=&quot;text-align: center&quot;&gt;Register&lt;/th&gt;
@@ -411,7 +411,313 @@ emulate the radio module receiving bytes.&lt;/p&gt;
 
 &lt;p&gt;Hopefully the last section gives you some insight on what the reverse 
 engineering process was like, not too harp on it too much, let’s move on to
-the actual findings in terms of the radio protocol:&lt;/p&gt;</content><author><name></name></author><category term="iclicker" /><category term="reverse engineering" /><category term="ida" /><category term="avr" /><category term="x86" /><summary type="html">What are iClickers?</summary><media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="http://localhost:4000/%7B%22feature%22=%3E%22iclicker/header.jpg%22,%20%22credit%22=%3E%22iclicker.com%22%7D" /></entry><entry><title type="html">SwampCTF 2019 Future Fun (Reverse) Writeup</title><link href="http://localhost:4000/swampctf-future/" rel="alternate" type="text/html" title="SwampCTF 2019 Future Fun (Reverse) Writeup" /><published>2019-04-06T00:00:00-04:00</published><updated>2019-04-06T00:00:00-04:00</updated><id>http://localhost:4000/swampctf-future</id><content type="html" xml:base="http://localhost:4000/swampctf-future/">&lt;h1 id=&quot;problem-description&quot;&gt;Problem Description&lt;/h1&gt;
+the actual findings in terms of the radio protocol:&lt;/p&gt;
+
+&lt;h3 id=&quot;welcome-ping-packet&quot;&gt;Welcome ping packet&lt;/h3&gt;
+
+&lt;p&gt;The base station sends out this packet on regular intervals (every few seconds),
+it contains the welcome message as shown on the iClicker like this:&lt;/p&gt;
+
+&lt;p&gt;&lt;img src=&quot;/images/iclicker/welcome_message.jpg&quot; alt=&quot;&quot; class=&quot;img-responsive&quot; /&gt;&lt;/p&gt;
+
+&lt;p&gt;as well as the question mode being used, which can either be the standard
+A/B/C/D/E multiple choice mode, numeric alphanumeric or a sequence of questions.&lt;/p&gt;
+
+&lt;h4 id=&quot;packet-details&quot;&gt;Packet details&lt;/h4&gt;
+
+&lt;table rules=&quot;groups&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Byte&lt;/th&gt;
+      &lt;th style=&quot;text-align: center&quot;&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;0-5&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Fixed header &lt;em&gt;(Radio sync bytes)&lt;/em&gt;&lt;br /&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;0x55 0x55 0x55 0x36 0x36 0x36&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;6-13&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Welcome message&lt;br /&gt; &lt;em&gt;(note this is not ascii, see below)&lt;/em&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;14&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Mode byte 1&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;15-16&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Number of questions&lt;br /&gt; &lt;em&gt;(for multiple question modes)&lt;/em&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;17&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Mode byte 2&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;18&lt;/td&gt;
+      &lt;td style=&quot;text-align: center&quot;&gt;Checksum&lt;br /&gt;&lt;em&gt;(sum of bytes 6-17)&lt;/em&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;The mode bytes are as follows:&lt;/p&gt;
+
+&lt;table rules=&quot;groups&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Mode&lt;/th&gt;
+      &lt;th&gt;Mode Byte 1&lt;/th&gt;
+      &lt;th&gt;Mode Byte 2&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Multiple Choice&lt;/td&gt;
+      &lt;td&gt;0x92&lt;/td&gt;
+      &lt;td&gt;0x62&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Numeric Mode&lt;/td&gt;
+      &lt;td&gt;0x93&lt;/td&gt;
+      &lt;td&gt;0x63&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Alphanumeric Mode&lt;/td&gt;
+      &lt;td&gt;0x9B&lt;/td&gt;
+      &lt;td&gt;0x6B&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Multiple Numeric&lt;/td&gt;
+      &lt;td&gt;0x94&lt;/td&gt;
+      &lt;td&gt;0x64&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;Multiple Alphanumeric&lt;/td&gt;
+      &lt;td&gt;0x9C&lt;/td&gt;
+      &lt;td&gt;0x6C&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;p&gt;Here are some examples of a welcome packets.&lt;/p&gt;
+
+&lt;p&gt;This causes the iClicker to show &lt;code class=&quot;highlighter-rouge&quot;&gt;IREVERSE&lt;/code&gt; on screen and puts it in the
+multiple choice mode.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x93 0x9C 0x8F 0xA0 0x8F 0x9C 0x9D 0x8F 0x92 0xAA 0xAA 0x62 0xFD
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     'I'  'R'  'E'  'V'  'E'  'R'  'S'  'E'   │    Useless   |  Checksum
+                                                                       │              |
+                                                      Question Mode (Multiple Choice) ┙
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;This causes the iClicker to show &lt;code class=&quot;highlighter-rouge&quot;&gt;2+2=5&lt;/code&gt; on screen and allows 8 questions to be
+answered in alphanumeric mode.&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x82 0xA6 0x82 0xA7 0x85 0x00 0x00 0x00 0x9C 0x08 0x00 0x6C 0xE6
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     '2'  '+'  '2'  '='  '5'  ' '  ' '  ' '   │  8 in little |  Checksum
+                                                                       │    endian    |
+                                                                       |              |
+                                                Question Mode (Multiple Alphanumeric) ┙
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;h4 id=&quot;text-encoding&quot;&gt;Text encoding&lt;/h4&gt;
+
+&lt;p&gt;As mentioned earlier, the welcome message isn’t a normal encoding like ASCII, it
+seems custom rolled.&lt;/p&gt;
+
+&lt;ul&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;1&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;9&lt;/code&gt; are from &lt;code class=&quot;highlighter-rouge&quot;&gt;0x81&lt;/code&gt; to &lt;code class=&quot;highlighter-rouge&quot;&gt;0x89&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;0&lt;/code&gt; is represented by &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8A&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;A&lt;/code&gt; starts at &lt;code class=&quot;highlighter-rouge&quot;&gt;0x8B&lt;/code&gt; and goes up sequentially like ASCII.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;-&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xA5&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;+&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xA6&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;=&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xA7&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;?&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xA8&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;_&lt;/code&gt; is &lt;code class=&quot;highlighter-rouge&quot;&gt;0xA9&lt;/code&gt;.&lt;/p&gt;
+  &lt;/li&gt;
+  &lt;li&gt;
+    &lt;p&gt;Any other bytes will show a blank.&lt;/p&gt;
+  &lt;/li&gt;
+&lt;/ul&gt;
+
+&lt;h3 id=&quot;multiple-choice-answer-ack-packet&quot;&gt;Multiple choice answer ACK packet&lt;/h3&gt;
+
+&lt;p&gt;Sent to acknowledge an answer for a multiple choice question. These involve
+calculations on the encoded iClicker id, which I will refer to as an array
+called &lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId&lt;/code&gt;.&lt;/p&gt;
+
+&lt;h4 id=&quot;accepted&quot;&gt;Accepted&lt;/h4&gt;
+
+&lt;p&gt;(Shows a tick on the iClicker screen)&lt;/p&gt;
+
+&lt;table rules=&quot;groups&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Bytes&lt;/th&gt;
+      &lt;th&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;0-2&lt;/td&gt;
+      &lt;td&gt;Fixed header &lt;em&gt;(Radio sync bytes)&lt;/em&gt;&lt;br /&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;0x55 0x55 0x55&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;3&lt;/td&gt;
+      &lt;td&gt;Byte 0 of the encoded iClicker ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId[0]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;4&lt;/td&gt;
+      &lt;td&gt;Byte 1 of the encoded iClicker ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId[1]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;5&lt;/td&gt;
+      &lt;td&gt;Bitwise negation of byte 2 of the ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;~encodedId[2]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;6&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;(encodedId[3] &amp;amp; 0xF0) | 0x02&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;7&lt;/td&gt;
+      &lt;td&gt;Constant &lt;code class=&quot;highlighter-rouge&quot;&gt;0x22&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h4 id=&quot;closed&quot;&gt;Closed&lt;/h4&gt;
+
+&lt;p&gt;(Shows closed on the iClicker screen)&lt;/p&gt;
+
+&lt;table rules=&quot;groups&quot;&gt;
+  &lt;thead&gt;
+    &lt;tr&gt;
+      &lt;th&gt;Bytes&lt;/th&gt;
+      &lt;th&gt;Description&lt;/th&gt;
+    &lt;/tr&gt;
+  &lt;/thead&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;0-2&lt;/td&gt;
+      &lt;td&gt;Fixed header &lt;em&gt;(Radio sync bytes)&lt;/em&gt;&lt;br /&gt; &lt;code class=&quot;highlighter-rouge&quot;&gt;0x55 0x55 0x55&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;3&lt;/td&gt;
+      &lt;td&gt;Byte 0 of the encoded iClicker ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId[0]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;4&lt;/td&gt;
+      &lt;td&gt;Byte 1 of the encoded iClicker ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId[1]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;5&lt;/td&gt;
+      &lt;td&gt;Bitwise negation of byte 2 of the ID (&lt;code class=&quot;highlighter-rouge&quot;&gt;~encodedId[2]&lt;/code&gt;)&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;6&lt;/td&gt;
+      &lt;td&gt;&lt;code class=&quot;highlighter-rouge&quot;&gt;(encodedId[3] &amp;amp; 0xF0) | 0x06&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+  &lt;tbody&gt;
+    &lt;tr&gt;
+      &lt;td&gt;7&lt;/td&gt;
+      &lt;td&gt;Constant &lt;code class=&quot;highlighter-rouge&quot;&gt;0x66&lt;/code&gt;&lt;/td&gt;
+    &lt;/tr&gt;
+  &lt;/tbody&gt;
+&lt;/table&gt;
+
+&lt;h4 id=&quot;example&quot;&gt;Example&lt;/h4&gt;
+
+&lt;p&gt;My iClicker ID is &lt;code class=&quot;highlighter-rouge&quot;&gt;A24653B7&lt;/code&gt;, which encodes to &lt;code class=&quot;highlighter-rouge&quot;&gt;0x14 0x8C 0x29 0x75&lt;/code&gt; when
+answering B.&lt;/p&gt;
+
+&lt;p&gt;Let’s calculate the inversion of my &lt;code class=&quot;highlighter-rouge&quot;&gt;encodedId[2]&lt;/code&gt;:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0x29 = 0b00101001
+    ~= 0b11010110 = 0xD6
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;Thus, a positive acknowledgement packet for this answer would be:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0x55 0x55 0x55  0x14 0x8C 0xD6 0x72 0x22
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;p&gt;And a negative acknowledgement packet would be:&lt;/p&gt;
+
+&lt;div class=&quot;highlighter-rouge&quot;&gt;&lt;div class=&quot;highlight&quot;&gt;&lt;pre class=&quot;highlight&quot;&gt;&lt;code&gt;0x55 0x55 0x55  0x14 0x8C 0xD6 0x76 0x66
+&lt;/code&gt;&lt;/pre&gt;&lt;/div&gt;&lt;/div&gt;
+
+&lt;blockquote&gt;
+  &lt;p&gt;Side note: I haven’t documented the ACK packets for other question
+modes since I figured there’s not a lot of interest for those, please 
+let me know if you’d like to see those.&lt;/p&gt;
+&lt;/blockquote&gt;
+
+&lt;h2 id=&quot;conclusion&quot;&gt;Conclusion&lt;/h2&gt;
+
+&lt;p&gt;This was my first real project reverse engineering a large real-world project,
+especially so in the embedded space. Compared to reverse engineering x86 a
+bigger chunk of time was spent reading datasheets for the hardware components,
+especially the ATMEL processor. The lack of strings, system calls etc also make
+it a lot harder to orient yourself and find your way around the code.&lt;/p&gt;
+
+&lt;p&gt;I’ve posted my IDA database and a text dump of the firmware on &lt;a href=&quot;https://github.com/ammaraskar/iClicker-base-reversing&quot;&gt;Github&lt;/a&gt;. 
+Feel free to reach out to me if you have any questions.&lt;/p&gt;</content><author><name></name></author><category term="iclicker" /><category term="reverse engineering" /><category term="ida" /><category term="avr" /><category term="x86" /><summary type="html">What are iClickers?</summary><media:thumbnail xmlns:media="http://search.yahoo.com/mrss/" url="http://localhost:4000/%7B%22feature%22=%3E%22iclicker/header.jpg%22,%20%22credit%22=%3E%22iclicker.com%22%7D" /></entry><entry><title type="html">SwampCTF 2019 Future Fun (Reverse) Writeup</title><link href="http://localhost:4000/swampctf-future/" rel="alternate" type="text/html" title="SwampCTF 2019 Future Fun (Reverse) Writeup" /><published>2019-04-06T00:00:00-04:00</published><updated>2019-04-06T00:00:00-04:00</updated><id>http://localhost:4000/swampctf-future</id><content type="html" xml:base="http://localhost:4000/swampctf-future/">&lt;h1 id=&quot;problem-description&quot;&gt;Problem Description&lt;/h1&gt;
 
 &lt;blockquote&gt;
   &lt;p&gt;Deep on the web, I discovered a secret key validation. It appeared to be from 

@@ -138,7 +138,7 @@
       <span class="entry-reading-time">
         <i class="fa fa-clock-o"></i>
         
-Reading time ~11 minutes
+Reading time ~14 minutes
       </span><!-- /.entry-reading-time -->
       
     </div><!-- /.entry-meta -->
@@ -399,7 +399,7 @@ similar! If we plot it out and label the bits, we see the following:</p>
 the radio chip. Notably it’s writing the value <code class="highlighter-rouge">0xF</code> to the register at
 address <code class="highlighter-rouge">0x01010</code>. I confirmed this theory by decoding a few more SPI writes.</p>
 
-<table>
+<table rules="groups">
   <thead>
     <tr>
       <th style="text-align: center">Register</th>
@@ -561,6 +561,312 @@ emulate the radio module receiving bytes.</p>
 <p>Hopefully the last section gives you some insight on what the reverse 
 engineering process was like, not too harp on it too much, let’s move on to
 the actual findings in terms of the radio protocol:</p>
+
+<h3 id="welcome-ping-packet">Welcome ping packet</h3>
+
+<p>The base station sends out this packet on regular intervals (every few seconds),
+it contains the welcome message as shown on the iClicker like this:</p>
+
+<p><img src="/images/iclicker/welcome_message.jpg" alt="" class="img-responsive" /></p>
+
+<p>as well as the question mode being used, which can either be the standard
+A/B/C/D/E multiple choice mode, numeric alphanumeric or a sequence of questions.</p>
+
+<h4 id="packet-details">Packet details</h4>
+
+<table rules="groups">
+  <thead>
+    <tr>
+      <th>Byte</th>
+      <th style="text-align: center">Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0-5</td>
+      <td style="text-align: center">Fixed header <em>(Radio sync bytes)</em><br /> <code class="highlighter-rouge">0x55 0x55 0x55 0x36 0x36 0x36</code></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>6-13</td>
+      <td style="text-align: center">Welcome message<br /> <em>(note this is not ascii, see below)</em></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>14</td>
+      <td style="text-align: center">Mode byte 1</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>15-16</td>
+      <td style="text-align: center">Number of questions<br /> <em>(for multiple question modes)</em></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>17</td>
+      <td style="text-align: center">Mode byte 2</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>18</td>
+      <td style="text-align: center">Checksum<br /><em>(sum of bytes 6-17)</em></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>The mode bytes are as follows:</p>
+
+<table rules="groups">
+  <thead>
+    <tr>
+      <th>Mode</th>
+      <th>Mode Byte 1</th>
+      <th>Mode Byte 2</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Multiple Choice</td>
+      <td>0x92</td>
+      <td>0x62</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>Numeric Mode</td>
+      <td>0x93</td>
+      <td>0x63</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>Alphanumeric Mode</td>
+      <td>0x9B</td>
+      <td>0x6B</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>Multiple Numeric</td>
+      <td>0x94</td>
+      <td>0x64</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>Multiple Alphanumeric</td>
+      <td>0x9C</td>
+      <td>0x6C</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Here are some examples of a welcome packets.</p>
+
+<p>This causes the iClicker to show <code class="highlighter-rouge">IREVERSE</code> on screen and puts it in the
+multiple choice mode.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x93 0x9C 0x8F 0xA0 0x8F 0x9C 0x9D 0x8F 0x92 0xAA 0xAA 0x62 0xFD
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     'I'  'R'  'E'  'V'  'E'  'R'  'S'  'E'   │    Useless   |  Checksum
+                                                                       │              |
+                                                      Question Mode (Multiple Choice) ┙
+</code></pre></div></div>
+
+<p>This causes the iClicker to show <code class="highlighter-rouge">2+2=5</code> on screen and allows 8 questions to be
+answered in alphanumeric mode.</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x82 0xA6 0x82 0xA7 0x85 0x00 0x00 0x00 0x9C 0x08 0x00 0x6C 0xE6
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     '2'  '+'  '2'  '='  '5'  ' '  ' '  ' '   │  8 in little |  Checksum
+                                                                       │    endian    |
+                                                                       |              |
+                                                Question Mode (Multiple Alphanumeric) ┙
+</code></pre></div></div>
+
+<h4 id="text-encoding">Text encoding</h4>
+
+<p>As mentioned earlier, the welcome message isn’t a normal encoding like ASCII, it
+seems custom rolled.</p>
+
+<ul>
+  <li>
+    <p><code class="highlighter-rouge">1</code> to <code class="highlighter-rouge">9</code> are from <code class="highlighter-rouge">0x81</code> to <code class="highlighter-rouge">0x89</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">0</code> is represented by <code class="highlighter-rouge">0x8A</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">A</code> starts at <code class="highlighter-rouge">0x8B</code> and goes up sequentially like ASCII.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">-</code> is <code class="highlighter-rouge">0xA5</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">+</code> is <code class="highlighter-rouge">0xA6</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">=</code> is <code class="highlighter-rouge">0xA7</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">?</code> is <code class="highlighter-rouge">0xA8</code>.</p>
+  </li>
+  <li>
+    <p><code class="highlighter-rouge">_</code> is <code class="highlighter-rouge">0xA9</code>.</p>
+  </li>
+  <li>
+    <p>Any other bytes will show a blank.</p>
+  </li>
+</ul>
+
+<h3 id="multiple-choice-answer-ack-packet">Multiple choice answer ACK packet</h3>
+
+<p>Sent to acknowledge an answer for a multiple choice question. These involve
+calculations on the encoded iClicker id, which I will refer to as an array
+called <code class="highlighter-rouge">encodedId</code>.</p>
+
+<h4 id="accepted">Accepted</h4>
+
+<p>(Shows a tick on the iClicker screen)</p>
+
+<table rules="groups">
+  <thead>
+    <tr>
+      <th>Bytes</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0-2</td>
+      <td>Fixed header <em>(Radio sync bytes)</em><br /> <code class="highlighter-rouge">0x55 0x55 0x55</code></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>3</td>
+      <td>Byte 0 of the encoded iClicker ID (<code class="highlighter-rouge">encodedId[0]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>4</td>
+      <td>Byte 1 of the encoded iClicker ID (<code class="highlighter-rouge">encodedId[1]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>5</td>
+      <td>Bitwise negation of byte 2 of the ID (<code class="highlighter-rouge">~encodedId[2]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>6</td>
+      <td><code class="highlighter-rouge">(encodedId[3] &amp; 0xF0) | 0x02</code></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>7</td>
+      <td>Constant <code class="highlighter-rouge">0x22</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="closed">Closed</h4>
+
+<p>(Shows closed on the iClicker screen)</p>
+
+<table rules="groups">
+  <thead>
+    <tr>
+      <th>Bytes</th>
+      <th>Description</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>0-2</td>
+      <td>Fixed header <em>(Radio sync bytes)</em><br /> <code class="highlighter-rouge">0x55 0x55 0x55</code></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>3</td>
+      <td>Byte 0 of the encoded iClicker ID (<code class="highlighter-rouge">encodedId[0]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>4</td>
+      <td>Byte 1 of the encoded iClicker ID (<code class="highlighter-rouge">encodedId[1]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>5</td>
+      <td>Bitwise negation of byte 2 of the ID (<code class="highlighter-rouge">~encodedId[2]</code>)</td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>6</td>
+      <td><code class="highlighter-rouge">(encodedId[3] &amp; 0xF0) | 0x06</code></td>
+    </tr>
+  </tbody>
+  <tbody>
+    <tr>
+      <td>7</td>
+      <td>Constant <code class="highlighter-rouge">0x66</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h4 id="example">Example</h4>
+
+<p>My iClicker ID is <code class="highlighter-rouge">A24653B7</code>, which encodes to <code class="highlighter-rouge">0x14 0x8C 0x29 0x75</code> when
+answering B.</p>
+
+<p>Let’s calculate the inversion of my <code class="highlighter-rouge">encodedId[2]</code>:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0x29 = 0b00101001
+    ~= 0b11010110 = 0xD6
+</code></pre></div></div>
+
+<p>Thus, a positive acknowledgement packet for this answer would be:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0x55 0x55 0x55  0x14 0x8C 0xD6 0x72 0x22
+</code></pre></div></div>
+
+<p>And a negative acknowledgement packet would be:</p>
+
+<div class="highlighter-rouge"><div class="highlight"><pre class="highlight"><code>0x55 0x55 0x55  0x14 0x8C 0xD6 0x76 0x66
+</code></pre></div></div>
+
+<blockquote>
+  <p>Side note: I haven’t documented the ACK packets for other question
+modes since I figured there’s not a lot of interest for those, please 
+let me know if you’d like to see those.</p>
+</blockquote>
+
+<h2 id="conclusion">Conclusion</h2>
+
+<p>This was my first real project reverse engineering a large real-world project,
+especially so in the embedded space. Compared to reverse engineering x86 a
+bigger chunk of time was spent reading datasheets for the hardware components,
+especially the ATMEL processor. The lack of strings, system calls etc also make
+it a lot harder to orient yourself and find your way around the code.</p>
+
+<p>I’ve posted my IDA database and a text dump of the firmware on <a href="https://github.com/ammaraskar/iClicker-base-reversing">Github</a>. 
+Feel free to reach out to me if you have any questions.</p>
 
   </div><!-- /.entry-content -->
 </article><!-- /.hentry -->

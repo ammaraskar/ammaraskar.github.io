@@ -264,6 +264,7 @@ address `0x01010`. I confirmed this theory by decoding a few more SPI writes.
 |  0x01010 |  0x0F |  Frequency Adjustment MSB  |
 |  0x01011 |  0xA0 |  Frequency Adjustment LSB  |
 |  0x00010 |  0x1F | Frequency Band 902–928 MHz |
+{: rules="groups"}
 
 Following the formula in the datasheet, we can see that the frequency will be
 be the base frequency plus 500 times the frequency adjustment registers 
@@ -403,3 +404,181 @@ int main(int argc, char** argv) {
 Hopefully the last section gives you some insight on what the reverse 
 engineering process was like, not too harp on it too much, let's move on to
 the actual findings in terms of the radio protocol:
+
+### Welcome ping packet
+
+The base station sends out this packet on regular intervals (every few seconds),
+it contains the welcome message as shown on the iClicker like this:
+
+![](/images/iclicker/welcome_message.jpg){:class="img-responsive"}
+
+as well as the question mode being used, which can either be the standard
+A/B/C/D/E multiple choice mode, numeric alphanumeric or a sequence of questions.
+
+#### Packet details
+
+|  Byte |                         Description                           |
+|-------|:-------------------------------------------------------------:|
+| 0-5   | Fixed header *(Radio sync bytes)*<br/> `0x55 0x55 0x55 0x36 0x36 0x36` |
+|----
+| 6-13  |      Welcome message<br/> *(note this is not ascii, see below)*     |
+|----
+| 14    |                          Mode byte 1                          |
+|----
+| 15-16 |       Number of questions<br/> *(for multiple question modes)*       |
+|----
+| 17    |                          Mode byte 2                          |
+|----
+| 18    |                            Checksum<br/>*(sum of bytes 6-17)*        |
+{: rules="groups"}
+
+The mode bytes are as follows:
+
+| Mode                  | Mode Byte 1 | Mode Byte 2 |
+|-----------------------|-------------|-------------|
+| Multiple Choice       | 0x92        | 0x62        |
+|---------------------------------------------------|
+| Numeric Mode          | 0x93        | 0x63        |
+|---------------------------------------------------|
+| Alphanumeric Mode     | 0x9B        | 0x6B        |
+|---------------------------------------------------|
+| Multiple Numeric      | 0x94        | 0x64        |
+|---------------------------------------------------|
+| Multiple Alphanumeric | 0x9C        | 0x6C        |
+{: rules="groups"}
+
+Here are some examples of a welcome packets.
+
+This causes the iClicker to show `IREVERSE` on screen and puts it in the
+multiple choice mode.
+
+```
+0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x93 0x9C 0x8F 0xA0 0x8F 0x9C 0x9D 0x8F 0x92 0xAA 0xAA 0x62 0xFD
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     'I'  'R'  'E'  'V'  'E'  'R'  'S'  'E'   │    Useless   |  Checksum
+                                                                       │              |
+                                                      Question Mode (Multiple Choice) ┙
+```
+
+This causes the iClicker to show `2+2=5` on screen and allows 8 questions to be
+answered in alphanumeric mode.
+
+```
+0    1    2    3    4    5    6    7    8    9    10   11   12   13   14   15   16   17   18
+0x55 0x55 0x55 0x36 0x36 0x36 0x82 0xA6 0x82 0xA7 0x85 0x00 0x00 0x00 0x9C 0x08 0x00 0x6C 0xE6
+ ^-------------------------^  ^---------- Welcome Message ----------^  ^   ^-------^  ^    ^
+  Header/Radio sync bytes     '2'  '+'  '2'  '='  '5'  ' '  ' '  ' '   │  8 in little |  Checksum
+                                                                       │    endian    |
+                                                                       |              |
+                                                Question Mode (Multiple Alphanumeric) ┙
+```
+
+
+#### Text encoding
+
+As mentioned earlier, the welcome message isn't a normal encoding like ASCII, it
+seems custom rolled.
+
+* `1` to `9` are from `0x81` to `0x89`.
+
+* `0` is represented by `0x8A`.
+
+* `A` starts at `0x8B` and goes up sequentially like ASCII.
+
+* `-` is `0xA5`.
+
+* `+` is `0xA6`.
+
+* `=` is `0xA7`.
+
+* `?` is `0xA8`.
+
+* `_` is `0xA9`.
+
+* Any other bytes will show a blank.
+
+
+### Multiple choice answer ACK packet
+
+Sent to acknowledge an answer for a multiple choice question. These involve
+calculations on the encoded iClicker id, which I will refer to as an array
+called `encodedId`.
+
+#### Accepted
+
+(Shows a tick on the iClicker screen)
+
+| Bytes  |       Description                                       |
+|------------------------------------------------------------------|
+| 0-2    | Fixed header *(Radio sync bytes)*<br/> `0x55 0x55 0x55` |
+|------------------------------------------------------------------|
+| 3      | Byte 0 of the encoded iClicker ID (`encodedId[0]`)      |
+|------------------------------------------------------------------|
+| 4      | Byte 1 of the encoded iClicker ID (`encodedId[1]`)      |
+|------------------------------------------------------------------|
+| 5      | Bitwise negation of byte 2 of the ID (`~encodedId[2]`)  |
+|------------------------------------------------------------------|
+| 6      | `(encodedId[3] & 0xF0) | 0x02`                          |
+|------------------------------------------------------------------|
+| 7      | Constant `0x22`                                         |
+{: rules="groups"}
+
+#### Closed
+
+(Shows closed on the iClicker screen)
+
+| Bytes  |       Description                                       |
+|------------------------------------------------------------------|
+| 0-2    | Fixed header *(Radio sync bytes)*<br/> `0x55 0x55 0x55` |
+|------------------------------------------------------------------|
+| 3      | Byte 0 of the encoded iClicker ID (`encodedId[0]`)      |
+|------------------------------------------------------------------|
+| 4      | Byte 1 of the encoded iClicker ID (`encodedId[1]`)      |
+|------------------------------------------------------------------|
+| 5      | Bitwise negation of byte 2 of the ID (`~encodedId[2]`)  |
+|------------------------------------------------------------------|
+| 6      | `(encodedId[3] & 0xF0) | 0x06`                          |
+|------------------------------------------------------------------|
+| 7      | Constant `0x66`                                         |
+{: rules="groups"}
+
+#### Example
+
+My iClicker ID is `A24653B7`, which encodes to `0x14 0x8C 0x29 0x75` when
+answering B.
+
+Let's calculate the inversion of my `encodedId[2]`: 
+
+```
+0x29 = 0b00101001
+    ~= 0b11010110 = 0xD6
+```
+
+Thus, a positive acknowledgement packet for this answer would be:
+
+```
+0x55 0x55 0x55  0x14 0x8C 0xD6 0x72 0x22
+```
+
+And a negative acknowledgement packet would be:
+
+```
+0x55 0x55 0x55  0x14 0x8C 0xD6 0x76 0x66
+```
+
+
+> Side note: I haven't documented the ACK packets for other question
+> modes since I figured there's not a lot of interest for those, please 
+> let me know if you'd like to see those.
+
+## Conclusion
+
+This was my first real project reverse engineering a large real-world project,
+especially so in the embedded space. Compared to reverse engineering x86 a
+bigger chunk of time was spent reading datasheets for the hardware components,
+especially the ATMEL processor. The lack of strings, system calls etc also make
+it a lot harder to orient yourself and find your way around the code.
+
+I've posted my IDA database and a text dump of the firmware on [Github](https://github.com/ammaraskar/iClicker-base-reversing). 
+Feel free to reach out to me if you have any questions.
