@@ -29,8 +29,8 @@ database.
 
 ## State of the art of iClicker reverse engineering
 
-A significant amount of work has been as far as figuring out how the student
-owned remotes work. The seminal work in this field is contained in this
+A significant amount of work has been done as far as figuring out how the 
+student owned remotes work. The seminal work in this area is contained in this
 [fantastic paper](https://courses.ece.ubc.ca/cpen442/term_project/reports/2010/iclicker.pdf) 
 conducted by some students at the University of British Columbia where they 
 dumped out the firmware of the remote. Some key contributions they made were
@@ -178,7 +178,7 @@ landmarks in the code to figure out what was going on.
 As mentioned in the introduction, previous reverse-engineers had already
 figured out what radio chip was used in the clicker, namely the [Semtech XE1203F](https://www.semtech.com/products/wireless-rf/fsk-transceivers/XE1203F).
 
-Consulting the datasheets for the IC, we can see that it uses a 3-write SPI 
+Consulting the datasheets for the IC, we can see that it uses a 3-wire SPI 
 (Serial Peripheral Interface) based protocol in order to configure the radio
 chip. The next logical step was to look at an SPI tutorial for AVR microcontrollers,
 I found a great one [here](http://avrbeginners.net/architecture/spi/spi.html) with
@@ -266,7 +266,7 @@ address `0x01010`. I confirmed this theory by decoding a few more SPI writes.
 |  0x00010 |  0x1F | Frequency Band 902–928 MHz |
 {: rules="groups"}
 
-Following the formula in the datasheet, we can see that the frequency will be
+Following the formula in the datasheet, we can see that the frequency will
 be the base frequency plus 500 times the frequency adjustment registers 
 interpreted as a 16 bit two's compliment number.
 
@@ -548,7 +548,7 @@ called `encodedId`.
 My iClicker ID is `A24653B7`, which encodes to `0x14 0x8C 0x29 0x75` when
 answering B.
 
-Let's calculate the inversion of my `encodedId[2]`: 
+Let's calculate the bitwise negation of my `encodedId[2]`: 
 
 ```
 0x29 = 0b00101001
@@ -577,7 +577,7 @@ And a negative acknowledgement packet would be:
 This was my first real project reverse engineering a large real-world project,
 especially so in the embedded space. Compared to reverse engineering x86 a
 bigger chunk of time was spent reading datasheets for the hardware components,
-especially the ATMEL processor. The lack of strings, system calls etc also make
+especially the Atmel processor. The lack of strings, system calls etc also make
 it a lot harder to orient yourself and find your way around the code.
 
 I've posted my IDA database and a text dump of the firmware on [Github](https://github.com/ammaraskar/iClicker-base-reversing). 
