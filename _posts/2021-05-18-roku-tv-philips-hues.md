@@ -51,7 +51,7 @@ this:
 
 #### A 50-inch Elment 4K TV powered by Roku.
 
-This [Element TV](https://elementelectronics.com/shop/50-element-4k-uhd-hdr10-roku-tv/)
+This [Element TV](https://elementelectronics.com/tv/400450-series/element-50-4k-uhd-hdr10-roku-tv)
 was one of the cheapest at the time and it has held up well over the years.
 
 I don't actually use any of the Roku/Smart TV functionality on it, instead
@@ -108,8 +108,8 @@ Netflix, Youtube, Hulu and friends on their TVs in a super convenient way.
 Starting in the mid 2010s, we started seeing the popularization of "smart TVs".
 As opposed to "dumb TVs" that can only display what you plug into them, these
 smart TVs started integrating streaming features into the TV itself. This meant
-that TVs themselves started being able to connect to the internet itself and
-have enough hardware to stream and decode video.
+that TVs themselves started being able to connect to the internet and have
+enough hardware to stream and decode video.
 
 Roku, realizing they had already built up a software stack and ecosystem in this
 area partnered with TV manufacturers to provide Roku as the operating system
@@ -191,7 +191,7 @@ actually an [interactive REPL for Brightscript](https://developer.roku.com/docs/
 running on a telnet server on the TV.
 
 We can hop onto the Brightscript REPL server with `telnet 192.168.1.69 8085`
-and get exploring:
+and start exploring:
 
 ```vb
 Brightscript Debugger> di = CreateObject("roDeviceInfo")
@@ -225,7 +225,7 @@ As it turns out, my TV model, the `7000X` is fairly powerful according to
 
 ### A Vulnerable API Function
 
-The next step was to explore the API surface and on really interesting aspect
+The next step was to explore the API surface and one really interesting aspect
 of this was the `roUrlTransfer`
 [object](https://developer.roku.com/en-gb/docs/references/brightscript/components/rourltransfer.md)
 which essentially allows you to make http requests. For example:
@@ -380,8 +380,8 @@ Linux version 3.10.108-grsec-rt122 (ec2-user@ip-10-215-112-19.eng.roku.com)
 ```
 
 Through `/proc/self/maps` we learn that the main Roku application that runs
-on the TV lives under `/bin/Application` and it utilizes an absolute ton of
-shared libraries:
+on the TV lives under `/bin/Application` and it utilizes a ton of shared
+libraries:
 
 ```
 00010000-00c82000 r-xp 00000000 fd:fa 2272       /bin/Application
@@ -417,15 +417,16 @@ So we took a look at `/proc/cmdline`:
 LX_MEM=0x21c00000,0x08a00000 LX_MEM2=0xac800000,0x13800000 EMAC_MEM=0x20400000,0x00100000 rtlog_mem_pa=0x20200000 rtlog_mem_size=0x00200000 vmalloc=512m console=ttyS0,0 ethaddr=00:e4:00:0e:f2:69 roku.bdrev=6 ip=off root=/dev/mtdblock_robbs1 ro rootfstype=cramfs init=/init roku.wakeupreason= backlight=0 rokuled=50,1,1536 mtdparts=edb64M-nand:7168k(Boot),98304k@107264k(Active),98560k@8704k(Update),318720k@205568k(RW)enc,256k@8448k(ID),256k@8192k(PC),256k@7936k(UBAPP),256k@7168k(LLAT),256k@7424k(SPARE) roku.blgpio=164:H chip_id=0xa02e8b0c model_has_hdr10=1 totalmem=1024 roothash=3b1d203af1706cdaf86af4a5b8530ed9c15d42478039b174f50bb1d095dfc1fe BOOTTIME_SBOOT=2636 BOOTTIME_UBOOT=914
 ```
 
-specifically
+and noticed
 
 ```
 root=/dev/mtdblock_robbs1 ro rootfstype=cramfs init=/init
 ```
 
-and realized that rootfs is loaded from `/dev/mtdblock_robbs1` and is `cramfs`
-based. So at this point we decided to download the entire `/dev/mtdblock_robbs1`
-device and take a look at it. Running `binwalk` on it we find:
+specifically. We realized that rootfs is loaded from `/dev/mtdblock_robbs1` and
+is `cramfs` based. So at this point we decided to download the entire
+`/dev/mtdblock_robbs1` device and take a look at it. Running `binwalk` on it we
+find:
 
 ```
 $ binwalk mtdblock_robbs1.cramfs
@@ -465,7 +466,7 @@ system and find exploits in more than just the main application binary.
 ### Getting More Access
 
 While we could read files and understand the behavior of the system pretty
-thoroughly at this point, we were still pretty far from code execution. At this
+thoroughly, we were still pretty far from code execution. At this
 point I met a couple of really smart hackers on the Exploiteers discord,
 [devnull](https://twitter.com/rmDevNull) and popeax who helped a lot by sharing
 information and tricks they had discovered.
@@ -590,7 +591,7 @@ exploit allows us to do.
 
 Despite busybox's reputation of being lightweight, you can expect that any
 daemon will have a fun set of options and `udhpcd` is no exception. It provides
-the absolutely fantastic option called `notify_file` which is described as:
+this absolutely fantastic option called `notify_file` which is described as:
 
 > Everytime udhcpd writes a leases file, the below script will be called.
 >
